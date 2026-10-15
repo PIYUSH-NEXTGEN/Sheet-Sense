@@ -1,0 +1,24 @@
+[project]
+name = "sheetsense-backend"
+version = "0.1.0"
+description = "SheetSense backend — fully local spreadsheet inheritance translator"
+readme = "../../README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "openpyxl",
+    "networkx",
+    "pydantic>=2",
+    "sqlalchemy",
+    "httpx",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ollama: requires a live local Ollama server (skipped otherwise)",
+]
