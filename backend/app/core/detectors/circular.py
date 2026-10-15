@@ -31,7 +31,7 @@ def run(
         if others:
             message = (
                 f"Suspicious circular reference: {anchor} depends on itself "
-                f"through {others} — review the chain before trusting results."
+                f"through {others}. Review the chain before trusting results."
             )
         else:
             message = (

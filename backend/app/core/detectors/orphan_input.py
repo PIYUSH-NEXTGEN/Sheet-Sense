@@ -66,7 +66,7 @@ def run(
                 rec.ref.sheet,
                 rec.ref.address,
                 f"Suspicious unused input at {rec.ref.address} ({label!r} = "
-                f"{rec.value}): nothing references it — check whether it "
+                f"{rec.value}): nothing references it. Check whether it "
                 "should be wired into a formula or removed.",
                 base_evidence(wb, key, label=label, value=rec.value),
             )

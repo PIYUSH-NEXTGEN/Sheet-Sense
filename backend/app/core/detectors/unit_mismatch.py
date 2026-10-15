@@ -70,8 +70,8 @@ def run(
                         rec.ref.sheet,
                         rec.ref.address,
                         f"Suspicious percent scale at {rec.ref.address}: "
-                        f"percent-formatted but holding {rec.value} (> 1) — "
-                        "did you mean a fraction like "
+                        f"percent-formatted but holding {rec.value} (> 1). "
+                        "Did you mean a fraction like "
                         f"{value / 100:g}?",
                         base_evidence(wb, key, value=rec.value),
                     )
@@ -88,7 +88,7 @@ def run(
                         rec.ref.address,
                         f"Suspicious mixed percent scales in this column: "
                         f"{rec.ref.address} holds {rec.value} while a sibling "
-                        "cell holds a value 100x smaller — one side is "
+                        "cell holds a value 100x smaller. One side is "
                         "likely off by 100x.",
                         base_evidence(
                             wb, key, value=rec.value,

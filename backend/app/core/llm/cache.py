@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from typing import Any
 
 from ...db.session import session_scope
 from ...db.tables import LLMCacheRow
+
+# Serializes concurrent SQLite access from the explainer worker pool.
+_cache_lock = threading.Lock()
 
 
 def cache_key(
@@ -33,7 +37,7 @@ def group_payload(pattern_r1c1: str, labels: dict[str, str]) -> str:
 
 def cache_get(key: str) -> dict[str, Any] | None:
     """Return the cached validated response, or None on miss."""
-    with session_scope() as session:
+    with _cache_lock, session_scope() as session:
         row = session.get(LLMCacheRow, key)
         if row is None:
             return None
@@ -46,7 +50,7 @@ def cache_get(key: str) -> dict[str, Any] | None:
 
 def cache_put(key: str, value: dict[str, Any]) -> None:
     """Store a validated response (overwrites on key reuse)."""
-    with session_scope() as session:
+    with _cache_lock, session_scope() as session:
         row = session.get(LLMCacheRow, key)
         payload = json.dumps(value, sort_keys=True, ensure_ascii=True)
         if row is None:

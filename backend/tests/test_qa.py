@@ -43,12 +43,14 @@ class ScriptedFake:
         answer: str = "Scripted answer.",
         fail_pick: bool = False,
         fail_answer: bool = False,
+        relevant: bool = True,
     ):
         self.pick = pick
         self.cited = cited
         self.answer = answer
         self.fail_pick = fail_pick
         self.fail_answer = fail_answer
+        self.relevant = relevant
         self.calls: list[str] = []
 
     def chat_structured(self, user_message: str, schema):
@@ -59,7 +61,11 @@ class ScriptedFake:
             return {"target": self.pick}
         if self.fail_answer:
             raise LLMError("answer failed")
-        return {"answer": self.answer, "cited_cells": list(self.cited)}
+        return {
+            "answer": self.answer,
+            "cited_cells": list(self.cited),
+            "relevant": self.relevant,
+        }
 
 
 def _answer(dirty_setup, fake, question="Where does the total with surcharge come from?", **kwargs):
@@ -143,6 +149,56 @@ def test_no_candidates_cant_trace(dirty_setup):
     out = _answer(dirty_setup, ScriptedFake(), question="xyzzy qqq zzz")
     assert out["target"] is None
     assert out["answer"] == CANT_TRACE
+
+
+def _context():
+    return (
+        {"Inputs": "holds items", "Pricing": "computes prices"},
+        {"sheets": ["Inputs", "Pricing"], "n_cells": 10},
+    )
+
+
+def test_general_answer_without_trace(dirty_setup):
+    wb, graph, groups = dirty_setup
+    sheets, stats = _context()
+    out = answer_question(
+        "what is this workbook for?",
+        wb, graph, groups, {},
+        ScriptedFake(answer="General stuff.", cited=()),
+        sheet_texts=sheets, stats=stats,
+    )
+    assert out["traced"] is False
+    assert out["target"] is None
+    assert out["cited_cells"] == []
+    assert out["answer"] == "General stuff."
+    assert out["relevant"] is True
+
+
+def test_irrelevant_flag_passes_through(dirty_setup):
+    wb, graph, groups = dirty_setup
+    sheets, stats = _context()
+    out = answer_question(
+        "what is the capital of France?",
+        wb, graph, groups, {},
+        ScriptedFake(answer="Not relevant.", relevant=False),
+        sheet_texts=sheets, stats=stats,
+    )
+    assert out["relevant"] is False
+    assert out["traced"] is False
+    assert "Not relevant." in out["answer"]
+
+
+def test_general_answer_failure_falls_back(dirty_setup):
+    wb, graph, groups = dirty_setup
+    sheets, stats = _context()
+    out = answer_question(
+        "anything at all?",
+        wb, graph, groups, {},
+        ScriptedFake(fail_answer=True),
+        sheet_texts=sheets, stats=stats,
+    )
+    assert out["traced"] is False
+    assert out["relevant"] is False
 
 
 def test_fake_client_end_to_end(dirty_setup):

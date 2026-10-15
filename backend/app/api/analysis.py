@@ -222,12 +222,18 @@ def get_sheet(workbook_id: str, name: str):
         for issue in result["issues"]
         if issue["ref"]["sheet"] == name
     ]
+    inputs = [
+        entry
+        for entry in result.get("inputs", [])
+        if entry.get("sheet") == name
+    ]
     return {
         "workbook_id": workbook_id,
         "sheet": name,
         "explanation": result["explanations"]["sheets"].get(name),
         "groups": groups,
         "issues": issues,
+        "inputs": inputs,
     }
 
 

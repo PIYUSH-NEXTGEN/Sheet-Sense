@@ -19,6 +19,7 @@ reports the counts it produced rather than recomputing them.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import date, datetime
 from typing import Any
 
 import networkx as nx
@@ -26,7 +27,7 @@ import networkx as nx
 from .. import config as app_config
 from .detectors import run_all
 from .graph.builder import build_graph
-from .grouping.patterns import group_formulas
+from .grouping.patterns import group_formulas, parse_address
 from .llm.client import LLMClient, OllamaClient
 from .llm.explainer import explain_groups, explain_sheets, explain_workbook
 from .models import Explanation, FormulaGroup, Issue, ParsedWorkbook
@@ -58,6 +59,15 @@ def _count_labeled(wb: ParsedWorkbook) -> int:
         for rec in wb.cells.values()
         if rec.label_left or rec.label_above
     )
+
+
+def _jsonable(value: Any) -> Any:
+    """Make cached values JSON-safe (datetimes → ISO strings)."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return str(value)
 
 
 def _sheet_stats(graph: nx.DiGraph) -> dict[str, dict[str, int]]:
@@ -155,7 +165,29 @@ def run_analysis(
             "n_groups": len(groups),
             "issues_by_severity": by_severity,
         },
-        "groups": [group.model_dump() for group in groups],
+        "groups": [
+            {**group.model_dump(), "sample_values": [_jsonable(v) for v in group.sample_values]}
+            for group in groups
+        ],
+        "inputs": sorted(
+            (
+                {
+                    "sheet": rec.ref.sheet,
+                    "address": rec.ref.address,
+                    "label_left": rec.label_left,
+                    "label_above": rec.label_above,
+                    "value": _jsonable(rec.value),
+                    "number_format": rec.number_format,
+                }
+                for rec in wb.cells.values()
+                if rec.kind == "input"
+            ),
+            key=lambda item: (
+                item["sheet"],
+                (parse_address(item["address"]) or (0, 0))[1],
+                (parse_address(item["address"]) or (0, 0))[0],
+            ),
+        ),
         "issues": [issue.model_dump() for issue in issues],
         "explanations": explanations,
     }

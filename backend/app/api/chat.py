@@ -44,7 +44,19 @@ def ask(workbook_id: str, body: AskRequest) -> dict[str, Any]:
         gid: (expl.get("text") or "")
         for gid, expl in result["explanations"]["groups"].items()
     }
+    sheet_texts = {
+        name: (expl.get("text") or "")
+        for name, expl in result["explanations"]["sheets"].items()
+    }
     depth = body.depth if body.depth and body.depth > 0 else TRACE_DEPTH
     return answer_question(
-        body.question, wb, graph, groups, group_texts, get_client(), depth
+        body.question,
+        wb,
+        graph,
+        groups,
+        group_texts,
+        get_client(),
+        depth,
+        sheet_texts=sheet_texts,
+        stats=result.get("stats", {}),
     )

@@ -71,6 +71,20 @@ async def upload_workbook(file: UploadFile = File(...)):
         )
     workbook_id = secrets.token_hex(8)
     with session_scope() as session:
+        # Same filename re-uploaded replaces the previous entry, so the
+        # list never fills with duplicates of one file.
+        old_rows = (
+            session.query(WorkbookRow)
+            .filter(WorkbookRow.filename == filename)
+            .all()
+        )
+        old_ids = [old.id for old in old_rows]
+        for old in old_rows:
+            try:
+                _stored_path(old.stored_name).unlink(missing_ok=True)
+            except OSError:
+                pass
+            session.delete(old)
         session.add(
             WorkbookRow(
                 id=workbook_id,
@@ -80,8 +94,10 @@ async def upload_workbook(file: UploadFile = File(...)):
                 status=STATUS_UPLOADED,
             )
         )
-    from .analysis import seed_progress
+    from .analysis import drop_progress, seed_progress
 
+    for old_id in old_ids:
+        drop_progress(old_id)
     seed_progress(workbook_id)
     return {
         "workbook_id": workbook_id,

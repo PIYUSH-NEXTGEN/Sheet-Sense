@@ -16,7 +16,7 @@ import networkx as nx
 
 from ..models import FormulaGroup, ParsedWorkbook
 from .client import LLMClient
-from .prompts import qa_answer_prompt, qa_pick_prompt
+from .prompts import qa_answer_prompt, qa_general_prompt, qa_pick_prompt
 from .schemas import QAAnswer, TargetPick, validate_cited_cells
 
 TRACE_DEPTH = 6
@@ -27,7 +27,7 @@ MAX_CANDIDATES = 8
 CHAIN_FACT_LIMIT = 30
 
 CANT_TRACE = (
-    "I couldn't trace that — none of the workbook's labels match the "
+    "I couldn't trace that. None of the workbook's labels match the "
     "question, or nothing citeable remained in the traced chain. Try "
     "naming a row or column header, e.g. 'Where does the total with "
     "surcharge come from?'"
@@ -158,6 +158,54 @@ def _chain_facts(
     return facts
 
 
+def _general_answer(
+    question: str,
+    sheet_texts: dict[str, str],
+    stats: dict[str, Any],
+    client: LLMClient,
+) -> dict[str, Any]:
+    """Answer without a traced chain (honestly labeled, never cited)."""
+    facts = {
+        "sheet_summaries": sheet_texts,
+        "stats": {
+            key: stats.get(key)
+            for key in (
+                "sheets",
+                "n_cells",
+                "n_formulas",
+                "n_inputs",
+                "n_outputs",
+                "n_groups",
+            )
+        },
+    }
+    try:
+        response = client.chat_structured(
+            qa_general_prompt(question, facts), QAAnswer
+        )
+        answer_text = str(response.get("answer", ""))
+        relevant = bool(response.get("relevant", True))
+    except Exception:
+        answer_text = (
+            "I couldn't answer that from this workbook. Try naming a row "
+            "or column header, e.g. 'Where does the total with surcharge "
+            "come from?'"
+        )
+        relevant = False
+    if not answer_text.strip():
+        answer_text = CANT_TRACE
+        relevant = False
+    return {
+        "question": question,
+        "target": None,
+        "answer": answer_text,
+        "cited_cells": [],
+        "chain": [],
+        "traced": False,
+        "relevant": relevant,
+    }
+
+
 def answer_question(
     question: str,
     wb: ParsedWorkbook,
@@ -166,16 +214,27 @@ def answer_question(
     group_texts: dict[str, str],
     client: LLMClient | None,
     depth: int = TRACE_DEPTH,
+    sheet_texts: dict[str, str] | None = None,
+    stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Answer ``question`` from the traced chain (see module docstring)."""
+    """Answer ``question`` from the traced chain (see module docstring).
+
+    When no candidate cell matches and a client plus workbook context are
+    available, falls back to a clearly-labeled general answer (never cited);
+    otherwise returns the couldn't-trace message.
+    """
     candidates = candidate_targets(question, wb)
     if not candidates:
+        if client is not None and sheet_texts is not None and stats is not None:
+            return _general_answer(question, sheet_texts, stats, client)
         return {
             "question": question,
             "target": None,
             "answer": CANT_TRACE,
             "cited_cells": [],
             "chain": [],
+            "traced": False,
+            "relevant": False,
         }
     target = candidates[0]
     if client is not None:
@@ -204,12 +263,14 @@ def answer_question(
             "target": target,
             "answer": (
                 f"{target} is computed from {len(collapsed['cells']) - 1} "
-                f"upstream cell(s) (no model configured — connect "
+                f"upstream cell(s) (no model configured. Connect "
                 f"Ollama/Gemma for a plain-English answer). Trace shown "
                 f"in cited_cells."
             ),
             "cited_cells": collapsed["cells"],
             "chain": collapsed["entries"],
+            "traced": True,
+            "relevant": True,
         }
     try:
         facts = _chain_facts(collapsed, wb, group_texts)
@@ -246,6 +307,8 @@ def answer_question(
             "answer": CANT_TRACE,
             "cited_cells": [],
             "chain": collapsed["entries"],
+            "traced": False,
+            "relevant": False,
         }
     return {
         "question": question,
@@ -253,6 +316,8 @@ def answer_question(
         "answer": answer_text,
         "cited_cells": cited,
         "chain": collapsed["entries"],
+        "traced": True,
+        "relevant": True,
     }
 
 

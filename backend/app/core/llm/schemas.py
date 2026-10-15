@@ -37,6 +37,7 @@ class TargetPick(BaseModel):
 class QAAnswer(BaseModel):
     answer: str = Field(min_length=1)
     cited_cells: list[str] = Field(default_factory=list)
+    relevant: bool = True  # False when the question is not about this workbook
 
 
 def validate_cited_cells(

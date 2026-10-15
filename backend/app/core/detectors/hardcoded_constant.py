@@ -82,7 +82,7 @@ def run(
                     rec.ref.sheet,
                     rec.ref.address,
                     f"Suspicious hardcoded number {number} in {rec.ref.address} "
-                    f"({rec.formula}) — consider moving it to a labeled input cell.",
+                    f"({rec.formula}). Consider moving it to a labeled input cell.",
                     base_evidence(wb, key, literal=number),
                 )
             )

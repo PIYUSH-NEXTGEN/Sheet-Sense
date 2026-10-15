@@ -99,6 +99,29 @@ Target cell: {target}
 Traced chain (target first, then its precedents):
 {_facts_block({"chain": chain})}
 
-Reply with JSON only: {{"answer": "<2-4 plain sentences grounded in the chain>", "cited_cells": ["<cells from the chain you used>"]}}.
+Reply with JSON only: {{"answer": "<2-4 plain sentences grounded in the chain>", "cited_cells": ["<cells from the chain you used>"], "relevant": true}}.
+
+{_STANDING_INSTRUCTION}"""
+
+
+def qa_general_prompt(
+    question: str, facts: dict[str, Any]
+) -> str:
+    """User message for questions with no traceable cell (Phase 7).
+
+    The model answers from workbook-level facts only. If the question is
+    not relevant to this workbook, it must say so plainly and set
+    ``relevant`` to false instead of guessing.
+    """
+    return f"""Answer the user's question using ONLY the workbook facts below. There is no traced calculation chain for this question, so cite no cells.
+
+Question: {question}
+
+Workbook facts:
+{_facts_block(facts)}
+
+If the question is not about this workbook or cannot be answered from these facts, say the question is not relevant to this workbook, briefly say what kind of questions you can answer (questions naming row/column headers or sheet contents), and set "relevant" to false.
+
+Reply with JSON only: {{"answer": "<2-4 plain sentences>", "cited_cells": [], "relevant": true or false}}.
 
 {_STANDING_INSTRUCTION}"""

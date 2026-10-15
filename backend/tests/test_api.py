@@ -235,9 +235,11 @@ def test_ask_without_match(client):
     body = client.post(
         f"/api/workbooks/{wid}/ask", json={"question": "xyzzy qqq zzz"}
     ).json()
+    # No traceable cell: honestly-labeled general answer, never cited.
     assert body["target"] is None
     assert body["cited_cells"] == []
-    assert "couldn't trace" in body["answer"]
+    assert body["answer"] == "Fake answer."
+    assert body["traced"] is False
 
 
 def test_list_shows_uploads(client):
@@ -246,3 +248,32 @@ def test_list_shows_uploads(client):
     listed = client.get("/api/workbooks").json()["workbooks"]
     assert [w["workbook_id"] for w in listed] == [wid]
     assert listed[0]["status"] == "uploaded"
+
+
+def test_sheet_inputs_listed(client):
+    wid = _upload(client)
+    _analyze_and_wait(client, wid)
+    body = client.get(f"/api/workbooks/{wid}/sheets/Inputs").json()
+    assert len(body["inputs"]) == 40  # 20 costs + 20 quantities
+    first = body["inputs"][0]
+    assert set(first) == {
+        "sheet", "address", "label_left", "label_above", "value",
+        "number_format",
+    }
+    assert first["label_above"] == "Unit Cost"
+    addresses = [i["address"] for i in body["inputs"]]
+    assert addresses[0] == "B2" and addresses[-1] == "C21"  # row-major order
+    pricing = client.get(f"/api/workbooks/{wid}/sheets/Pricing").json()
+    # Dirty C13 is the planted constant inside a formula column.
+    assert [(i["address"], i["value"]) for i in pricing["inputs"]] == [
+        ("C13", 99.5)
+    ]
+
+
+def test_reupload_same_filename_replaces(client):
+    first = _upload(client)
+    second = _upload(client)
+    assert first != second
+    listed = client.get("/api/workbooks").json()["workbooks"]
+    assert [w["workbook_id"] for w in listed] == [second]
+    assert client.get(f"/api/workbooks/{first}/overview").status_code == 404
