@@ -35,6 +35,10 @@ docs/
 # Working spec (local reference copy, not part of the build)
 agent.md
 
+# Reference screenshots (local design material, not part of the build)
+/design.jpg
+/design.png
+
 # Local env config (see backend/.env.example)
 .env
 

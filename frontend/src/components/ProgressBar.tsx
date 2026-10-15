@@ -17,16 +17,19 @@ export function ProgressBar({
         aria-valuemax={100}
         aria-valuenow={clamped}
         aria-label={failed ? "Analysis failed" : "Analysis progress"}
-        className="h-3 w-full overflow-hidden rounded bg-gray-200"
+        className="h-2.5 w-full overflow-hidden rounded-md bg-night-950"
       >
         <div
-          className={`h-full transition-all ${failed ? "bg-red-500" : "bg-blue-600"}`}
+          className={`h-full rounded-md transition-all duration-300 ${failed ? "bg-danger" : "bg-accent"}`}
           style={{ width: `${clamped}%` }}
         />
       </div>
-      <p className="mt-1 text-sm text-gray-600">
-        {clamped}% — {detail}
-      </p>
+      <div className="mt-1.5 flex items-baseline justify-between gap-2">
+        <p className="truncate font-mono text-sm text-night-400">{detail}</p>
+        <p className="tnum shrink-0 font-mono text-sm font-bold text-night-100">
+          {clamped}%
+        </p>
+      </div>
     </div>
   );
 }

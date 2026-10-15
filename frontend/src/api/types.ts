@@ -101,12 +101,22 @@ export interface GroupWithExplanation extends FormulaGroup {
   explanation: Explanation | null;
 }
 
+export interface SheetInput {
+  sheet: string;
+  address: string;
+  label_left: string | null;
+  label_above: string | null;
+  value: unknown;
+  number_format: string | null;
+}
+
 export interface SheetDetail {
   workbook_id: string;
   sheet: string;
   explanation: Explanation | null;
   groups: GroupWithExplanation[];
   issues: Issue[];
+  inputs: SheetInput[];
 }
 
 export interface IssuesResponse {
@@ -138,4 +148,6 @@ export interface AskResponse {
   answer: string;
   cited_cells: string[];
   chain: ChainEntry[];
+  traced: boolean;
+  relevant: boolean;
 }

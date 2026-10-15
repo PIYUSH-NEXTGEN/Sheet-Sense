@@ -19,7 +19,7 @@ export function CellChip({
   return (
     <Link
       to={to}
-      className="inline-block rounded bg-blue-50 px-1.5 py-0.5 font-mono text-xs text-blue-800 hover:bg-blue-100 hover:underline"
+      className="inline-flex items-center rounded-md border border-link/40 bg-link/10 px-1.5 py-0.5 font-mono text-sm font-medium text-link hover:bg-link/20 hover:underline"
       aria-label={`Go to ${sheet}!${address}`}
     >
       {sheet}!{address}

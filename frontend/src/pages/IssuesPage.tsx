@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { Severity } from "../api/types";
 import { IssueList } from "../components/IssueList";
 import { EmptyState, ErrorState, LoadingState } from "../components/States";
+import { Card, PageHeader } from "../components/ui";
 import { apiErrorMessage } from "../hooks/useWorkbook";
 
 const SEVERITIES: Array<"all" | Severity> = ["all", "high", "medium", "low"];
@@ -41,34 +42,33 @@ export function IssuesPage() {
   );
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Suspicious cells to review</h1>
-      <p className="text-sm text-gray-600">
-        {filtered.length} of {all.length} shown. These are hints, not proof of
-        errors — always check the formula and neighbors.
-      </p>
+    <div className="space-y-5">
+      <PageHeader
+        title="Suspicious cells to review"
+        description={`${filtered.length} of ${all.length} shown. These are hints, not proof of errors. Always check the formula and neighbors.`}
+      />
 
-      <div className="flex flex-wrap gap-4">
-        <label className="text-sm">
-          Severity{" "}
+      <Card className="flex flex-wrap gap-x-6 gap-y-3 px-4 py-3 sm:px-5">
+        <label className="flex items-center gap-2 font-mono text-sm text-night-400">
+          <span className="font-medium">Severity</span>
           <select
             value={severity}
             onChange={(e) => setSeverity(e.target.value as "all" | Severity)}
-            className="rounded border border-gray-300 px-2 py-1"
+            className="rounded-md border border-night-600 bg-night-950 px-2 py-1.5 text-sm text-night-100"
           >
             {SEVERITIES.map((option) => (
               <option key={option} value={option}>
-                {option}
+                {option === "all" ? "All severities" : option}
               </option>
             ))}
           </select>
         </label>
-        <label className="text-sm">
-          Detector{" "}
+        <label className="flex items-center gap-2 font-mono text-sm text-night-400">
+          <span className="font-medium">Detector</span>
           <select
             value={detector}
             onChange={(e) => setDetector(e.target.value)}
-            className="rounded border border-gray-300 px-2 py-1"
+            className="rounded-md border border-night-600 bg-night-950 px-2 py-1.5 font-mono text-sm text-night-100"
           >
             {detectors.map((option) => (
               <option key={option} value={option}>
@@ -77,10 +77,10 @@ export function IssuesPage() {
             ))}
           </select>
         </label>
-      </div>
+      </Card>
 
       {all.length === 0 ? (
-        <EmptyState message="No suspicious cells to review — nothing flagged in this workbook." />
+        <EmptyState message="No suspicious cells to review. Nothing flagged in this workbook." />
       ) : filtered.length === 0 ? (
         <EmptyState message="No suspicious cells match these filters." />
       ) : (

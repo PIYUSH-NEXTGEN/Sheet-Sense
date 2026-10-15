@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { DependencyGraph } from "../components/DependencyGraph";
 import { EmptyState, ErrorState, LoadingState } from "../components/States";
+import { Card, PageHeader, SecondaryButton, SectionTitle, Stat } from "../components/ui";
 import { apiErrorMessage, useWorkbook } from "../hooks/useWorkbook";
 
 /** Workbook overview: explanation, stats, dependency map, sheets. */
@@ -42,96 +43,92 @@ export function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">{data.filename}</h1>
-        <div className="flex gap-2">
-          <Link
-            to={`/w/${data.workbook_id}/issues`}
-            className="rounded bg-blue-700 px-3 py-1.5 text-sm text-white hover:bg-blue-800"
-          >
-            Suspicious cells to review
-          </Link>
-          <Link
-            to={`/w/${data.workbook_id}/ask`}
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
-          >
-            Ask a question
-          </Link>
-          <button
-            type="button"
-            onClick={() => void downloadExport()}
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
-          >
-            Export Markdown
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title={data.filename}
+        description="Plain-English overview, dependency map and entry points into the workbook."
+        actions={
+          <>
+            <Link
+              to={`/w/${data.workbook_id}/issues`}
+              className="inline-flex w-full items-center justify-center rounded-md bg-accent px-3.5 py-2 font-mono text-sm font-bold text-accent-ink hover:brightness-110 sm:w-auto"
+            >
+              Suspicious cells to review
+            </Link>
+            <Link
+              to={`/w/${data.workbook_id}/ask`}
+              className="inline-flex w-full items-center justify-center rounded-md border border-night-600 bg-transparent px-3.5 py-2 font-mono text-sm font-medium text-night-100 hover:border-night-400 hover:bg-night-700 sm:w-auto"
+            >
+              Ask a question
+            </Link>
+            <SecondaryButton
+              onClick={() => void downloadExport()}
+              className="w-full sm:w-auto"
+            >
+              Export Markdown
+            </SecondaryButton>
+          </>
+        }
+      />
       {exportError && <ErrorState message={exportError} />}
 
-      <section aria-label="Plain-English overview">
-        <h2 className="text-lg font-semibold">What this workbook does</h2>
-        <p className="mt-1 text-sm">{data.explanation.text}</p>
-      </section>
-
-      {data.warnings.length > 0 && (
-        <section aria-label="Warnings">
-          <h2 className="text-lg font-semibold">Warnings</h2>
-          <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+      <Card className="p-5 sm:p-6">
+        <SectionTitle>What this workbook does</SectionTitle>
+        <p className="mt-2 text-sm leading-relaxed text-night-100">
+          {data.explanation.text}
+        </p>
+        {data.warnings.length > 0 && (
+          <ul className="mt-3 space-y-1 border-t border-night-600 pt-3 text-sm">
             {data.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
+              <li key={warning} className="flex gap-2 text-warn">
+                <span className="font-mono font-semibold">
+                  Warning
+                </span>
+                <span className="font-mono">{warning}</span>
+              </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </Card>
 
       <section aria-label="Statistics">
-        <h2 className="text-lg font-semibold">Statistics</h2>
-        <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Sheets" value={String(data.stats.sheets.length)} />
           <Stat label="Formulas" value={String(data.stats.n_formulas)} />
           <Stat label="Inputs" value={String(data.stats.n_inputs)} />
           <Stat label="Outputs" value={String(data.stats.n_outputs)} />
-          <Stat label="Formula groups" value={String(data.stats.n_groups)} />
+          <Stat label="Groups" value={String(data.stats.n_groups)} />
           <Stat label="High" value={String(counts.high ?? 0)} />
           <Stat label="Medium" value={String(counts.medium ?? 0)} />
           <Stat label="Low" value={String(counts.low ?? 0)} />
         </dl>
       </section>
 
-      <section aria-label="Dependency map">
-        <h2 className="text-lg font-semibold">Dependency map</h2>
-        <div className="mt-2">
-          <DependencyGraph workbookId={data.workbook_id} />
-        </div>
+      <section aria-label="Dependency map" className="space-y-3">
+        <SectionTitle>Dependency map</SectionTitle>
+        <DependencyGraph workbookId={data.workbook_id} />
       </section>
 
-      <section aria-label="Sheets">
-        <h2 className="text-lg font-semibold">Sheets</h2>        {data.stats.sheets.length === 0 ? (
+      <section aria-label="Sheets" className="space-y-3">
+        <SectionTitle>Sheets</SectionTitle>
+        {data.stats.sheets.length === 0 ? (
           <EmptyState message="No sheets found in this workbook." />
         ) : (
-          <ul className="mt-2 space-y-1">
+          <Card className="divide-y divide-night-600 overflow-hidden p-0">
             {data.stats.sheets.map((sheet) => (
-              <li key={sheet}>
-                <Link
-                  to={`/w/${data.workbook_id}/sheets/${encodeURIComponent(sheet)}`}
-                  className="text-blue-700 hover:underline"
-                >
-                  {sheet}
-                </Link>
-              </li>
+              <Link
+                key={sheet}
+                to={`/w/${data.workbook_id}/sheets/${encodeURIComponent(sheet)}`}
+                className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-night-700/50 sm:px-5"
+              >
+                <span className="font-mono text-base font-medium text-night-100">{sheet}</span>
+                <span aria-hidden="true" className="text-night-400">
+                  →
+                </span>
+              </Link>
             ))}
-          </ul>
+          </Card>
         )}
       </section>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <dt className="text-xs uppercase text-gray-500">{label}</dt>
-      <dd className="text-xl font-semibold">{value}</dd>
     </div>
   );
 }

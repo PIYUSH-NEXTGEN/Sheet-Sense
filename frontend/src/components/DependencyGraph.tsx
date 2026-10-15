@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Background,
+  BackgroundVariant,
   Controls,
   MiniMap,
   ReactFlow,
@@ -92,17 +93,17 @@ export function DependencyGraph({ workbookId }: { workbookId: string }) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2" role="group" aria-label="Graph level">
+      <div className="inline-flex rounded-md border border-night-600 bg-night-950 p-0.5" role="group" aria-label="Graph level">
         {(["sheet", "group"] as const).map((option) => (
           <button
             key={option}
             type="button"
             aria-pressed={level === option}
             onClick={() => setLevel(option)}
-            className={`rounded border px-2 py-1 text-sm ${
+            className={`rounded px-3 py-1.5 font-mono text-sm font-medium transition-colors ${
               level === option
-                ? "border-blue-700 bg-blue-700 text-white"
-                : "border-gray-300 hover:bg-gray-100"
+                ? "bg-accent font-bold text-accent-ink"
+                : "text-night-400 hover:text-night-100"
             }`}
           >
             {option === "sheet" ? "Sheets" : "Groups"}
@@ -121,12 +122,13 @@ export function DependencyGraph({ workbookId }: { workbookId: string }) {
         <EmptyState message="No dependencies to map." />
       )}
       {laid && laid.nodes.length > 0 && (
-        <div className="h-[480px] rounded-lg border border-gray-200 bg-white">
+        <div className="h-[480px] overflow-hidden rounded-lg border border-night-600 bg-night-950">
           <ReactFlow
             nodes={laid.nodes}
             edges={laid.edges}
             fitView
             minZoom={0.2}
+            colorMode="dark"
             onNodeClick={(_event, node) => {
               const sheet = (node.data as { sheet?: string }).sheet;
               if (sheet) {
@@ -136,7 +138,7 @@ export function DependencyGraph({ workbookId }: { workbookId: string }) {
               }
             }}
           >
-            <Background />
+            <Background variant={BackgroundVariant.Dots} gap={24} />
             <Controls />
             <MiniMap />
           </ReactFlow>

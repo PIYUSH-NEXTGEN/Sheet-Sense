@@ -17,7 +17,22 @@ const queryClient = new QueryClient({
   },
 });
 
-function HealthDot() {
+function BrandMark() {
+  return (
+    <span
+      aria-hidden="true"
+      className="grid h-8 w-8 place-items-center rounded-md bg-accent"
+    >
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <rect x="1.5" y="1.5" width="15" height="15" rx="2" stroke="#14141c" strokeWidth="1.8" />
+        <path d="M1.5 6.5h15M6.5 6.5v10" stroke="#14141c" strokeWidth="1.8" />
+        <rect x="8" y="8" width="7" height="7" fill="#14141c" />
+      </svg>
+    </span>
+  );
+}
+
+function HealthPill() {
   const health = useQuery({
     queryKey: ["health"],
     queryFn: () => api.health(),
@@ -30,49 +45,64 @@ function HealthDot() {
       to="/setup"
       title={ok ? "Backend and model ready" : "Open setup status"}
       aria-label={ok ? "Backend and model ready" : "Setup needed"}
-      className={`inline-block h-3 w-3 rounded-full ${ok ? "bg-green-500" : "bg-amber-500"}`}
-    />
+      className="inline-flex items-center gap-1.5 rounded-md border border-night-600 bg-night-800 px-2.5 py-1 font-mono text-sm text-night-300 hover:border-night-400"
+    >
+      <span
+        aria-hidden="true"
+        className={`h-2 w-2 rounded-full ${ok ? "bg-accent" : "bg-warn"}`}
+      />
+      {ok ? "Ready" : "Setup"}
+    </Link>
   );
 }
 
 function Layout() {
   const location = useLocation();
-  const link = (to: string, label: string) => (
-    <Link
-      key={to}
-      to={to}
-      aria-current={location.pathname === to ? "page" : undefined}
-      className={`rounded px-2 py-1 text-sm hover:bg-gray-200 ${
-        location.pathname === to ? "font-semibold underline" : ""
-      }`}
-    >
-      {label}
-    </Link>
-  );
+  const link = (to: string, label: string) => {
+    const active =
+      to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
+    return (
+      <Link
+        key={to}
+        to={to}
+        aria-current={active ? "page" : undefined}
+        className={`rounded-md px-3 py-1.5 font-mono text-sm transition-colors ${
+          active
+            ? "bg-night-700 font-bold text-night-100"
+            : "text-night-400 hover:bg-night-800 hover:text-night-100"
+        }`}
+      >
+        {label}
+      </Link>
+    );
+  };
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="flex min-h-screen flex-col bg-night-900 text-night-100">
       <a
         href="#content"
-        className="sr-only focus:not-sr-only focus:absolute focus:bg-white focus:p-2"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-night-800 focus:p-2"
       >
         Skip to content
       </a>
-      <header className="border-b border-gray-200 bg-white">
+      <header className="sticky top-0 z-40 border-b border-night-600 bg-night-950">
         <nav
           aria-label="Primary"
-          className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3"
+          className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3"
         >
-          <Link to="/" className="text-lg font-bold">
-            SheetSense
+          <Link to="/" className="flex items-center gap-2.5">
+            <BrandMark />
+            <span className="font-mono text-2xl font-bold tracking-tight">SheetSense</span>
           </Link>
-          <HealthDot />
-          <div className="ml-4 flex gap-1">
-            {link("/", "Upload")}
+          <div className="ml-6 flex items-center gap-1">
+            {link("/", "Workbooks")}
             {link("/setup", "Setup")}
+          </div>
+          <div className="ml-auto">
+            <HealthPill />
           </div>
         </nav>
       </header>
-      <main id="content" className="mx-auto max-w-6xl px-4 py-6">
+      <main id="content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
         <Routes>
           <Route path="/" element={<UploadPage />} />
           <Route path="/setup" element={<SetupPage />} />
@@ -86,6 +116,12 @@ function Layout() {
           />
         </Routes>
       </main>
+      <footer className="border-t border-night-600 bg-night-950">
+        <p className="mx-auto max-w-6xl px-4 py-4 font-mono text-sm text-night-400">
+          SheetSense runs fully on your machine. Findings are suspicious cells
+          to review. This is not an audit.
+        </p>
+      </footer>
     </div>
   );
 }

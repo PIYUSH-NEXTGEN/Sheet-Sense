@@ -56,15 +56,31 @@ export function FileDropzone({
           setDragging(false);
           if (!disabled) accept(e.dataTransfer.files?.[0]);
         }}
-        className={`cursor-pointer rounded-lg border-2 border-dashed p-8 text-center ${
-          dragging ? "border-blue-600 bg-blue-50" : "border-gray-300 bg-white"
-        } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
+        className={`rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors ${
+          dragging
+            ? "border-accent bg-accent/10"
+            : "border-night-600 bg-night-950 hover:border-accent/60"
+        } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
       >
-        <p className="text-lg font-medium">
-          {disabled ? "Analyzing…" : "Drop an .xlsx file here, or click to choose one"}
+        <svg
+          aria-hidden="true"
+          className="mx-auto h-9 w-9 text-accent"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 16V4m0 0 4 4m-4-4-4 4" />
+          <path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" />
+        </svg>
+        <p className="mt-3 text-base font-semibold text-night-100">
+          {disabled ? "Analyzing…" : "Drop an .xlsx file here, or browse"}
         </p>
-        <p id="dropzone-hint" className="mt-1 text-sm text-gray-500">
-          Macro workbooks (.xlsm) are not supported. Files stay on your machine.
+        <p id="dropzone-hint" className="mt-1 font-mono text-sm text-night-400">
+          Macro workbooks (.xlsm) are not supported. Files never leave your
+          machine.
         </p>
         <input
           ref={inputRef}
@@ -81,7 +97,7 @@ export function FileDropzone({
         />
       </div>
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-700">
+        <p role="alert" className="mt-2 text-sm font-medium text-danger">
           {error}
         </p>
       )}
