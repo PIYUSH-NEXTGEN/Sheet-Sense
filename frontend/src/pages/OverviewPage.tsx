@@ -103,11 +103,6 @@ export function OverviewPage() {
         </dl>
       </section>
 
-      <section aria-label="Dependency map" className="space-y-3">
-        <SectionTitle>Dependency map</SectionTitle>
-        <DependencyGraph workbookId={data.workbook_id} />
-      </section>
-
       <section aria-label="Sheets" className="space-y-3">
         <SectionTitle>Sheets</SectionTitle>
         {data.stats.sheets.length === 0 ? (
@@ -128,6 +123,11 @@ export function OverviewPage() {
             ))}
           </Card>
         )}
+      </section>
+
+      <section aria-label="Dependency map" className="space-y-3">
+        <SectionTitle>Dependency map</SectionTitle>
+        <DependencyGraph workbookId={data.workbook_id} />
       </section>
     </div>
   );

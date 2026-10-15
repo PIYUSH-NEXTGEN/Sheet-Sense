@@ -215,26 +215,65 @@ export const api = {
 
 /**
  * Subscribe to SSE progress events. Returns an unsubscribe function.
- * The server closes the stream once the analysis is done or failed.
+ *
+ * Resilient to slow analyses: the server numbers every message and each
+ * connection only lives ~2 minutes, so on any drop this silently reconnects
+ * with `?after=N` and deduplicates by id. `onError` fires only when the
+ * stream stays dead (backend gone, workbook deleted) — never for a slow
+ * analysis. The server closes the stream once the analysis is done/failed.
  */
+const MAX_RECONNECTS = 40;
+const RECONNECT_WAIT_MS = 1500;
+
 export function subscribeProgress(
   workbookId: string,
   onEvent: (event: ProgressEvent) => void,
   onError?: (message: string) => void,
 ): () => void {
-  const source = new EventSource(
-    `${API_BASE}/api/workbooks/${encodeURIComponent(workbookId)}/progress`,
-  );
-  source.onmessage = (message: MessageEvent) => {
-    try {
-      onEvent(JSON.parse(message.data) as ProgressEvent);
-    } catch {
-      onError?.("Received an unreadable progress event.");
-    }
+  let stopped = false;
+  let failures = 0;
+  let nextIndex = 0;
+  const seen = new Set<string>();
+  let source: EventSource | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  function connect() {
+    if (stopped) return;
+    const current = new EventSource(
+      `${API_BASE}/api/workbooks/${encodeURIComponent(workbookId)}/progress?after=${nextIndex}`,
+    );
+    source = current;
+    current.onmessage = (message: MessageEvent) => {
+      failures = 0;
+      const id = message.lastEventId || String(nextIndex);
+      if (seen.has(id)) return; // redelivered after a resume
+      seen.add(id);
+      const numeric = Number.parseInt(id, 10);
+      nextIndex = Number.isFinite(numeric) ? numeric + 1 : nextIndex + 1;
+      try {
+        onEvent(JSON.parse(message.data) as ProgressEvent);
+      } catch {
+        onError?.("Received an unreadable progress event.");
+      }
+    };
+    current.onerror = () => {
+      current.close();
+      if (source === current) source = null;
+      if (stopped) return;
+      failures += 1;
+      if (failures > MAX_RECONNECTS) {
+        onError?.("Lost connection to the progress stream.");
+        return;
+      }
+      timer = setTimeout(connect, RECONNECT_WAIT_MS);
+    };
+  }
+
+  connect();
+  return () => {
+    stopped = true;
+    if (timer !== null) clearTimeout(timer);
+    source?.close();
+    source = null;
   };
-  source.onerror = () => {
-    onError?.("Lost connection to the progress stream.");
-    source.close();
-  };
-  return () => source.close();
 }

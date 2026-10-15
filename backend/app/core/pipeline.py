@@ -98,6 +98,7 @@ def run_analysis(
     filename: str,
     emit: Emit,
     make_client: MakeClient | None = None,
+    extra_warnings: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run all stages; returns a JSON-serializable result payload.
 
@@ -155,7 +156,7 @@ def run_analysis(
     result = {
         "workbook_id": workbook_id,
         "filename": filename,
-        "warnings": list(wb.warnings),
+        "warnings": list(wb.warnings) + list(extra_warnings or []),
         "stats": {
             "sheets": sheet_names,
             "n_cells": len(wb.cells),

@@ -36,7 +36,7 @@ def test_kinds_clean(clean):
     assert clean.cells["Summary!B4"].kind == "formula"
     assert clean.cells["Inputs!B2"].kind == "input"  # numeric constant
     assert clean.cells["Settings!B1"].kind == "input"
-    assert clean.cells["Inputs!A2"].kind == "label"  # text "Item-01"
+    assert clean.cells["Inputs!A2"].kind == "label"  # text "Copy Paper A4 Rim"
     assert clean.cells["Pricing!B1"].kind == "label"  # header "Cost Total"
     assert clean.cells["Summary!A2"].kind == "label"
     assert "Pricing!Z99" not in clean.cells  # empty cells are absent
@@ -49,7 +49,7 @@ def test_labels_clean(clean):
     # Pricing!A2 is a formula, not text, so no text sits left of B2.
     assert clean.cells["Pricing!B2"].label_left is None
     assert clean.cells["Inputs!B2"].label_above == "Unit Cost"
-    assert clean.cells["Inputs!B2"].label_left == "Item-01"
+    assert clean.cells["Inputs!B2"].label_left == "Copy Paper A4 Rim"
     assert clean.cells["Inputs!C5"].label_above == "Qty"
     assert clean.cells["Summary!B2"].label_left == "Total cost"
     assert clean.cells["Summary!B4"].label_left == "Total with tax"

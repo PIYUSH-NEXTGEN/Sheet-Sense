@@ -64,7 +64,7 @@ npm run dev
 Open **http://localhost:5173** (important: use `localhost`, not `127.0.0.1` —
 the backend's CORS list allows exactly `http://localhost:5173`).
 
-Upload `backend/tests/fixtures/dirty.xlsx` and follow the progress bar into
+Upload `backend/tests/fixtures/harbor-supply-pricing.xlsx` and follow the progress bar into
 the overview, the dependency map, the issues list, and the Ask page.
 
 ## Tests
@@ -80,7 +80,7 @@ Frontend checks: `cd frontend && npm run build` (runs `tsc --noEmit` + Vite buil
 ## 60-second demo (do installs/pulls online first, then turn off Wi-Fi)
 
 1. (0:00) With Wi-Fi **off**, open http://localhost:5173 — Setup shows green.
-2. (0:10) Drag in `backend/tests/fixtures/dirty.xlsx`; watch the SSE progress bar.
+2. (0:10) Drag in `backend/tests/fixtures/harbor-supply-pricing.xlsx`; watch the SSE progress bar.
 3. (0:20) Overview: plain-English summary, stats, dependency map (toggle Sheets/Groups).
 4. (0:30) "Suspicious cells to review": filter severity — the hardcoded `1.15` in `Summary!B5`, the `99.5` pattern break in `Pricing!C13`, the short `SUM` in `Summary!B3`, two orphan inputs, one loop.
 5. (0:50) Ask page: *"Where does the total with surcharge come from?"* → traced answer with clickable cells; click one to land on its sheet/group.
@@ -89,6 +89,9 @@ Frontend checks: `cd frontend && npm run build` (runs `tsc --noEmit` + Vite buil
 ## Known limitations (v1 — not solved on purpose)
 
 - VBA/macros are unsupported (`.xlsm` files are rejected).
+- Legacy `.xls` files are converted locally with LibreOffice when it is
+  installed (any macros are dropped, and the analysis says so); without
+  LibreOffice, upload the file as `.xlsx` instead.
 - Cached values may be missing; value-based checks degrade gracefully.
 - Very large workbooks are processed with range-node collapsing and are slower to explain.
 - Model explanations can be imperfect; the formula and evidence beside each claim are the source of truth.
@@ -102,7 +105,7 @@ Frontend checks: `cd frontend && npm run build` (runs `tsc --noEmit` + Vite buil
 | Blank page / blocked fetches | Open `http://localhost:5173`, not `http://127.0.0.1:5173` (CORS) |
 | "Unexpected response … Is the SheetSense backend running on port 8000?" | Another app is answering on :8000 — stop it and restart uvicorn |
 | Explanations say "unavailable" | `ollama list` → set exact name in `backend/.env` as `MODEL_NAME`, restart backend |
-| First analysis is slow | Normal — Gemma loads once (~4 min for `dirty.xlsx` on CPU); reruns are instant from SQLite cache |
+| First analysis is slow | Normal — Gemma loads once (~4 min for the sample workbook on CPU); reruns are instant from SQLite cache |
 
 ## How it works (short)
 

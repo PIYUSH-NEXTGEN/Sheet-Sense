@@ -1,12 +1,12 @@
-"""Fixture generator (Phase 1): ``dirty.xlsx``, ``clean.xlsx``.
+"""Fixture generator: ``harbor-supply-pricing.xlsx`` and its clean twin.
 
 Builds both workbooks exactly per spec section 11.1 with openpyxl, plus
 ``expected_issues.json`` listing the expected ``{detector, sheet, address}``
-for ``dirty.xlsx`` — six entries (the five planted problems plus the extra
-orphan ``Settings!B4``, which becomes unreferenced in ``dirty.xlsx`` when
-``Summary!B5`` stops referencing it).
+for the flagged workbook — six entries (the five planted problems plus the
+extra orphan ``Settings!B4``, which becomes unreferenced when ``Summary!B5``
+stops referencing it).
 
-``dirty.xlsx`` differs from ``clean.xlsx`` in exactly five places:
+The flagged workbook differs from clean in exactly five places:
 1. ``Summary!B5`` = ``=B4*1.15`` (hardcoded_constant)
 2. ``Pricing!C13`` = the number ``99.5`` (pattern_break)
 3. ``Summary!B3`` = ``=SUM(Pricing!C2:C20)`` (range_gap)
@@ -31,9 +31,36 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
+DIRTY_NAME = "harbor-supply-pricing.xlsx"
+CLEAN_NAME = "harbor-supply-pricing-clean.xlsx"
+
 N_ROWS = 20
 FIRST_ROW = 2
 LAST_ROW = FIRST_ROW + N_ROWS - 1  # 21
+
+# Realistic office-supply catalog: (item, unit cost, qty).
+PRODUCTS: list[tuple[str, float, int]] = [
+    ("Copy Paper A4 Rim", 4.80, 12),
+    ("Ballpoint Pen Box", 6.40, 8),
+    ("Stapler Pro", 14.95, 3),
+    ("Sticky Notes Pack", 3.25, 20),
+    ("Binder Clips Box", 2.10, 15),
+    ("Highlighters Set", 5.60, 9),
+    ("Desk Organizer", 18.75, 2),
+    ("USB-C Cable 2m", 9.90, 11),
+    ("Wireless Mouse", 24.50, 4),
+    ("Keyboard Wired", 32.00, 4),
+    ("Monitor Stand", 45.95, 2),
+    ("Notebook A5", 3.90, 25),
+    ("Envelope Box", 7.30, 6),
+    ("Tape Dispenser", 8.85, 5),
+    ("Scissors Pair", 4.45, 7),
+    ("Whiteboard Markers", 11.20, 6),
+    ("Filing Folders Pack", 12.60, 10),
+    ("Label Roll", 13.40, 5),
+    ("Desk Lamp", 29.99, 3),
+    ("Trash Bin 12L", 16.50, 4),
+]
 
 EXPECTED_ISSUES = [
     {"detector": "hardcoded_constant", "sheet": "Summary", "address": "B5"},
@@ -46,7 +73,7 @@ EXPECTED_ISSUES = [
 
 
 def _build_base() -> Workbook:
-    """Shared layout for clean and dirty (dirty edits applied afterwards)."""
+    """Shared layout for clean and flagged (flagged edits applied afterwards)."""
     wb = Workbook()
 
     inputs = wb.active
@@ -54,11 +81,11 @@ def _build_base() -> Workbook:
     inputs["A1"] = "Item"
     inputs["B1"] = "Unit Cost"
     inputs["C1"] = "Qty"
-    for i in range(1, N_ROWS + 1):
+    for i, (item, cost, qty) in enumerate(PRODUCTS, start=1):
         r = FIRST_ROW + i - 1
-        inputs[f"A{r}"] = f"Item-{i:02d}"
-        inputs[f"B{r}"] = 5.0 * i
-        inputs[f"C{r}"] = (i % 5) + 1
+        inputs[f"A{r}"] = item
+        inputs[f"B{r}"] = cost
+        inputs[f"C{r}"] = qty
 
     settings = wb.create_sheet("Settings")
     settings["A1"] = "Markup"
@@ -129,19 +156,26 @@ def _maybe_recalc(path: Path) -> None:
 
 
 def make_fixtures(out_dir: str | Path | None = None) -> Path:
-    """Write clean.xlsx, dirty.xlsx and expected_issues.json; return out_dir."""
+    """Write both workbooks and expected_issues.json; return out_dir."""
     out = Path(out_dir) if out_dir is not None else Path(__file__).resolve().parent
     out.mkdir(parents=True, exist_ok=True)
 
-    clean_path = out / "clean.xlsx"
+    clean_path = out / CLEAN_NAME
     _build_base().save(clean_path)
     _maybe_recalc(clean_path)
 
-    dirty_path = out / "dirty.xlsx"
+    dirty_path = out / DIRTY_NAME
     wb = _build_base()
     _apply_dirty(wb)
     wb.save(dirty_path)
     _maybe_recalc(dirty_path)
+
+    # Drop legacy filenames from before the rename.
+    for legacy in ("clean.xlsx", "dirty.xlsx"):
+        try:
+            (out / legacy).unlink()
+        except OSError:
+            pass
 
     with open(out / "expected_issues.json", "w", encoding="utf-8") as fh:
         json.dump(EXPECTED_ISSUES, fh, indent=2)

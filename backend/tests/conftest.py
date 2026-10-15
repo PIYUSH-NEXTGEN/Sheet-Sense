@@ -15,7 +15,11 @@ FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 def _ensure_fixtures() -> None:
-    needed = ["clean.xlsx", "dirty.xlsx", "expected_issues.json"]
+    needed = [
+        "harbor-supply-pricing-clean.xlsx",
+        "harbor-supply-pricing.xlsx",
+        "expected_issues.json",
+    ]
     if all((FIXTURE_DIR / name).exists() for name in needed):
         return
     from fixtures.make_fixture import make_fixtures
@@ -25,8 +29,8 @@ def _ensure_fixtures() -> None:
 
 _ensure_fixtures()
 
-CLEAN_XLSX = str(FIXTURE_DIR / "clean.xlsx")
-DIRTY_XLSX = str(FIXTURE_DIR / "dirty.xlsx")
+CLEAN_XLSX = str(FIXTURE_DIR / "harbor-supply-pricing-clean.xlsx")
+DIRTY_XLSX = str(FIXTURE_DIR / "harbor-supply-pricing.xlsx")
 EXPECTED_ISSUES = str(FIXTURE_DIR / "expected_issues.json")
 
 

@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Background,
   BackgroundVariant,
-  Controls,
   MiniMap,
   ReactFlow,
   type Edge,
@@ -129,6 +128,13 @@ export function DependencyGraph({ workbookId }: { workbookId: string }) {
             fitView
             minZoom={0.2}
             colorMode="dark"
+            zoomOnScroll={false}
+            zoomOnPinch={false}
+            zoomOnDoubleClick={false}
+            panOnScroll={false}
+            panOnDrag={false}
+            nodesDraggable={false}
+            nodesConnectable={false}
             onNodeClick={(_event, node) => {
               const sheet = (node.data as { sheet?: string }).sheet;
               if (sheet) {
@@ -139,8 +145,7 @@ export function DependencyGraph({ workbookId }: { workbookId: string }) {
             }}
           >
             <Background variant={BackgroundVariant.Dots} gap={24} />
-            <Controls />
-            <MiniMap />
+            <MiniMap pannable={false} zoomable={false} />
           </ReactFlow>
         </div>
       )}

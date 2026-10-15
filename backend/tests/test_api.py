@@ -6,12 +6,13 @@ Storage is isolated per test via the live ``DATA_DIR`` env override (see
 """
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from conftest import FIXTURE_DIR, FakeLLMClient
+from conftest import CLEAN_XLSX, DIRTY_XLSX, FIXTURE_DIR, FakeLLMClient
 
 
 @pytest.fixture(autouse=True)
@@ -27,8 +28,8 @@ def _mock_llm(monkeypatch):
     )
     monkeypatch.setattr(chat, "get_client", lambda: FakeLLMClient())
 
-DIRTY_BYTES = (FIXTURE_DIR / "dirty.xlsx").read_bytes()
-CLEAN_BYTES = (FIXTURE_DIR / "clean.xlsx").read_bytes()
+DIRTY_BYTES = Path(DIRTY_XLSX).read_bytes()
+CLEAN_BYTES = Path(CLEAN_XLSX).read_bytes()
 XLSX_MEDIA = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
@@ -41,7 +42,7 @@ def client(tmp_path, monkeypatch):
         yield test_client
 
 
-def _upload(client, name="dirty.xlsx", content=DIRTY_BYTES):
+def _upload(client, name="harbor-supply-pricing.xlsx", content=DIRTY_BYTES):
     resp = client.post(
         "/api/workbooks",
         files={"file": (name, content, XLSX_MEDIA)},
@@ -69,6 +70,30 @@ def _analyze_and_wait(client, workbook_id):
     return events
 
 
+def _progress_events(text: str) -> list:
+    return [
+        json.loads(line[len("data: "):])
+        for line in text.splitlines()
+        if line.startswith("data: ")
+    ]
+
+
+def test_progress_resumes_from_after(client):
+    wid = _upload(client)
+    full = _progress_events(client.get(f"/api/workbooks/{wid}/progress").text)
+    assert full, "expected seeded events"
+    resumed = _progress_events(
+        client.get(f"/api/workbooks/{wid}/progress?after=1").text
+    )
+    assert resumed == full[1:]
+    assert (
+        _progress_events(
+            client.get(f"/api/workbooks/{wid}/progress?after=1000").text
+        )
+        == []
+    )
+
+
 def test_health_structure(client):
     body = client.get("/api/health").json()
     assert body["backend"] == "ok"
@@ -93,7 +118,7 @@ def test_full_flow_dirty(client):
         assert expected in stages
 
     overview = client.get(f"/api/workbooks/{wid}/overview").json()
-    assert overview["filename"] == "dirty.xlsx"
+    assert overview["filename"] == "harbor-supply-pricing.xlsx"
     assert overview["stats"]["n_groups"] == 11
     assert overview["issues_by_severity"] == {"high": 3, "medium": 1, "low": 2}
     assert "cached_values_missing" in overview["warnings"]
@@ -151,7 +176,7 @@ def test_full_flow_dirty(client):
     export = client.get(f"/api/workbooks/{wid}/export?format=md")
     assert export.status_code == 200
     assert "text/markdown" in export.headers["content-type"]
-    assert 'filename="dirty.md"' in export.headers["content-disposition"]
+    assert 'filename="harbor-supply-pricing.md"' in export.headers["content-disposition"]
     assert "Summary!B5" in export.text
     assert "Suspicious cells to review" in export.text
     assert "| Severity | Detector | Cell | Finding | Formula |" in export.text
@@ -165,7 +190,7 @@ def test_full_flow_dirty(client):
 
 
 def test_full_flow_clean_zero_issues(client):
-    wid = _upload(client, name="clean.xlsx", content=CLEAN_BYTES)
+    wid = _upload(client, name="harbor-supply-pricing-clean.xlsx", content=CLEAN_BYTES)
     _analyze_and_wait(client, wid)
     assert client.get(f"/api/workbooks/{wid}/issues").json()["total"] == 0
     overview = client.get(f"/api/workbooks/{wid}/overview").json()
@@ -185,6 +210,37 @@ def test_reject_xlsm(client):
     )
     assert resp.status_code == 400
     assert ".xlsm" in resp.json()["detail"]
+
+
+def test_xls_without_libreoffice_rejected_with_instructions(client, monkeypatch):
+    monkeypatch.setattr("app.core.convert.soffice_path", lambda: None)
+    resp = client.post(
+        "/api/workbooks", files={"file": ("old.xls", b"fake-ole2", XLSX_MEDIA)}
+    )
+    assert resp.status_code == 400
+    assert "LibreOffice" in resp.json()["detail"]
+
+
+def test_xls_converted_and_analyzed(client, monkeypatch):
+    from pathlib import Path as _Path
+
+    def _fake_convert(src, out_dir):
+        target = out_dir / f"{src.stem}.xlsx"
+        target.write_bytes(_Path(DIRTY_XLSX).read_bytes())
+        return target
+
+    monkeypatch.setattr("app.api.workbooks.convert_xls_to_xlsx", _fake_convert)
+    resp = client.post(
+        "/api/workbooks", files={"file": ("old.xls", b"fake-ole2", XLSX_MEDIA)}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["converted"] is True
+    assert body["filename"] == "old.xls"
+    _analyze_and_wait(client, body["workbook_id"])
+    overview = client.get(f"/api/workbooks/{body['workbook_id']}/overview").json()
+    assert overview["issues_by_severity"] == {"high": 3, "medium": 1, "low": 2}
+    assert any("macros were dropped" in w for w in overview["warnings"])
 
 
 def test_reject_garbage_content(client):

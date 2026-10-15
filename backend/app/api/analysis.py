@@ -34,6 +34,15 @@ router = APIRouter()
 _progress: dict[str, dict[str, Any]] = {}
 _progress_lock = threading.Lock()
 
+# One-shot conversion notices set at upload time, consumed by the analysis
+# thread (single process; popped on use so restarts cannot leak stale ones).
+_conversion_notes: dict[str, str] = {}
+
+
+def note_conversion(workbook_id: str, message: str) -> None:
+    with _progress_lock:
+        _conversion_notes[workbook_id] = message
+
 
 def _event(stage: str, percent: int, detail: str) -> dict[str, Any]:
     return {"stage": stage, "percent": percent, "detail": detail}
@@ -67,6 +76,8 @@ def _finish_progress(workbook_id: str, ok: bool, detail: str) -> None:
 
 
 def _run_analysis_thread(workbook_id: str, stored_path: str, filename: str) -> None:
+    with _progress_lock:
+        extra = [_conversion_notes.pop(workbook_id)] if workbook_id in _conversion_notes else []
     try:
         result = run_analysis(
             workbook_id,
@@ -75,6 +86,7 @@ def _run_analysis_thread(workbook_id: str, stored_path: str, filename: str) -> N
             emit=lambda stage, pct, detail: emit_progress(
                 workbook_id, stage, pct, detail
             ),
+            extra_warnings=extra,
         )
     except Exception as exc:  # reader guards (size/cells/macros) land here
         with session_scope() as session:
@@ -157,8 +169,13 @@ def start_analysis(workbook_id: str):
 
 
 @router.get("/{workbook_id}/progress")
-def progress(workbook_id: str):
-    """SSE stream of ``{stage, percent, detail}`` events."""
+def progress(workbook_id: str, after: int = Query(default=0, ge=0)):
+    """SSE stream of ``{stage, percent, detail}`` events.
+
+    Each message carries an ``id`` (its index), and ``after=N`` replays
+    from event N, so clients dropped by timeouts reconnect seamlessly.
+    A single connection lives at most ~2 minutes; the client resumes.
+    """
 
     def _snapshot() -> tuple[list[dict[str, Any]], bool]:
         with _progress_lock:
@@ -172,16 +189,17 @@ def progress(workbook_id: str):
             _get_row_or_404(session, workbook_id)
 
     def gen():
-        index = 0
-        deadline = time.time() + 30
+        index = max(after, 0)
+        deadline = time.time() + 120
+        yield ": connected\n\n"
         while True:
             events, done = _snapshot()
             while index < len(events):
-                yield f"data: {json.dumps(events[index])}\n\n"
+                yield f"id: {index}\ndata: {json.dumps(events[index])}\n\n"
                 index += 1
             if done or time.time() > deadline:
                 break
-            time.sleep(0.15)
+            time.sleep(0.5)
 
     return StreamingResponse(
         gen(),
@@ -355,6 +373,7 @@ __all__ = [
     "drop_progress",
     "emit_progress",
     "get_ready_result",
+    "note_conversion",
     "seed_progress",
     "stored_path_for",
 ]

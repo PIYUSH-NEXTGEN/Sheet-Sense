@@ -1,7 +1,8 @@
 """Workbook upload/list/delete endpoints (Phase 3).
 
 Uploads are validated by extension AND by opening with openpyxl; ``.xlsm``
-macro workbooks are rejected with a clear error. Files are stored under
+macro workbooks are rejected with a clear error. Legacy ``.xls`` files are
+converted locally via LibreOffice when available. Files are stored under
 ``DATA_DIR/uploads`` with random names. ``MAX_FILE_MB`` is enforced here;
 ``MAX_CELLS`` is enforced by the reader at analyze time.
 """
@@ -9,6 +10,7 @@ macro workbooks are rejected with a clear error. Files are stored under
 from __future__ import annotations
 
 import secrets
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -16,10 +18,16 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from openpyxl import load_workbook
 
 from .. import config as app_config
+from ..core.convert import ConvertError, convert_xls_to_xlsx
 from ..db.session import init_db, session_scope, uploads_dir
 from ..db.tables import (
     STATUS_UPLOADED,
     WorkbookRow,
+)
+
+CONVERSION_NOTICE = (
+    "Uploaded as a legacy .xls file and converted locally; "
+    "any macros were dropped. Verify totals against the original."
 )
 
 router = APIRouter()
@@ -31,10 +39,10 @@ def _stored_path(stored_name: str) -> Path:
 
 @router.post("")
 async def upload_workbook(file: UploadFile = File(...)):
-    """Multipart upload ``.xlsx``; returns ``workbook_id``."""
+    """Multipart upload ``.xlsx`` (or legacy ``.xls``); returns ``workbook_id``."""
     filename = (file.filename or "").strip()
     suffix = Path(filename).suffix.lower()
-    if not filename or suffix != ".xlsx":
+    if not filename or suffix not in (".xlsx", ".xls"):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -53,6 +61,25 @@ async def upload_workbook(file: UploadFile = File(...)):
                 f"{app_config.MAX_FILE_MB:g} MB limit."
             ),
         )
+    converted = False
+    if suffix == ".xls":
+        with tempfile.TemporaryDirectory(prefix="ss-xls-") as tmp:
+            src = Path(tmp) / "upload.xls"
+            src.write_bytes(data)
+            try:
+                converted_path = convert_xls_to_xlsx(src, Path(tmp))
+            except ConvertError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            data = converted_path.read_bytes()
+        if len(data) > limit:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    "Converted file exceeds the "
+                    f"{app_config.MAX_FILE_MB:g} MB limit."
+                ),
+            )
+        converted = True
     init_db()
     stored_name = f"{uuid.uuid4().hex}.xlsx"
     path = _stored_path(stored_name)
@@ -94,15 +121,18 @@ async def upload_workbook(file: UploadFile = File(...)):
                 status=STATUS_UPLOADED,
             )
         )
-    from .analysis import drop_progress, seed_progress
+    from .analysis import drop_progress, note_conversion, seed_progress
 
     for old_id in old_ids:
         drop_progress(old_id)
     seed_progress(workbook_id)
+    if converted:
+        note_conversion(workbook_id, CONVERSION_NOTICE)
     return {
         "workbook_id": workbook_id,
         "filename": filename,
         "status": STATUS_UPLOADED,
+        "converted": converted,
     }
 
 

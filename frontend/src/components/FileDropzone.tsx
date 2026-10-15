@@ -16,7 +16,14 @@ export function FileDropzone({
   function accept(file: File | undefined) {
     setError(null);
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".xls") && !lower.endsWith(".xlsx")) {
+      // Legacy format: the backend converts it locally when LibreOffice
+      // is installed, otherwise it replies with a clear error.
+      onFile(file);
+      return;
+    }
+    if (!lower.endsWith(".xlsx")) {
       setError(
         `Only .xlsx workbooks are accepted (got ${file.name}). Macro workbooks (.xlsm) are unsupported.`,
       );
@@ -41,7 +48,7 @@ export function FileDropzone({
       <div
         role="button"
         tabIndex={disabled ? -1 : 0}
-        aria-label="Choose an .xlsx workbook to analyze"
+        aria-label="Choose an .xlsx or .xls workbook to analyze"
         aria-disabled={disabled}
         aria-describedby="dropzone-hint"
         onClick={() => !disabled && inputRef.current?.click()}
@@ -79,13 +86,14 @@ export function FileDropzone({
           {disabled ? "Analyzing…" : "Drop an .xlsx file here, or browse"}
         </p>
         <p id="dropzone-hint" className="mt-1 font-mono text-sm text-night-400">
-          Macro workbooks (.xlsm) are not supported. Files never leave your
-          machine.
+          .xlsx preferred. Old .xls files are converted on your machine
+          (needs LibreOffice); macro workbooks (.xlsm) are not supported.
+          Files never leave your machine.
         </p>
         <input
           ref={inputRef}
           type="file"
-          accept=".xlsx"
+          accept=".xlsx,.xls"
           className="hidden"
           tabIndex={-1}
           aria-hidden="true"

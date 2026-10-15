@@ -164,7 +164,7 @@ def test_pipeline_continues_with_placeholders(tmp_path, monkeypatch):
     result = run_analysis(
         "w1",
         DIRTY_XLSX,
-        "dirty.xlsx",
+        "harbor-supply-pricing.xlsx",
         emit=lambda s, p, d: events.append((s, p)),
         make_client=lambda: FakeLLMClient(fail=True),
     )
@@ -181,7 +181,7 @@ def test_pipeline_uses_fake_model_text(tmp_path, monkeypatch):
     result = run_analysis(
         "w1",
         DIRTY_XLSX,
-        "dirty.xlsx",
+        "harbor-supply-pricing.xlsx",
         emit=lambda s, p, d: None,
         make_client=lambda: FakeLLMClient(),
     )
