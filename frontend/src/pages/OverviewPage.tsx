@@ -1,12 +1,15 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
+import { DependencyGraph } from "../components/DependencyGraph";
 import { EmptyState, ErrorState, LoadingState } from "../components/States";
 import { apiErrorMessage, useWorkbook } from "../hooks/useWorkbook";
 
-/** Workbook overview WITHOUT the dependency map (map lands in Phase 6). */
+/** Workbook overview: explanation, stats, dependency map, sheets. */
 export function OverviewPage() {
   const { id } = useParams<{ id: string }>();
   const overview = useWorkbook(id);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   if (overview.isPending) return <LoadingState what="overview" />;
   if (overview.isError) {
@@ -22,15 +25,19 @@ export function OverviewPage() {
   const counts = data.issues_by_severity ?? {};
 
   async function downloadExport() {
-    const blob = await api.exportMarkdown(data.workbook_id);
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${data.filename.replace(/\.xlsx$/i, "")}.md`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    try {
+      const blob = await api.exportMarkdown(data.workbook_id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${data.filename.replace(/\.xlsx$/i, "")}.md`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: unknown) {
+      setExportError(apiErrorMessage(error));
+    }
   }
 
   return (
@@ -44,6 +51,12 @@ export function OverviewPage() {
           >
             Suspicious cells to review
           </Link>
+          <Link
+            to={`/w/${data.workbook_id}/ask`}
+            className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
+          >
+            Ask a question
+          </Link>
           <button
             type="button"
             onClick={() => void downloadExport()}
@@ -53,6 +66,7 @@ export function OverviewPage() {
           </button>
         </div>
       </div>
+      {exportError && <ErrorState message={exportError} />}
 
       <section aria-label="Plain-English overview">
         <h2 className="text-lg font-semibold">What this workbook does</h2>
@@ -84,9 +98,15 @@ export function OverviewPage() {
         </dl>
       </section>
 
+      <section aria-label="Dependency map">
+        <h2 className="text-lg font-semibold">Dependency map</h2>
+        <div className="mt-2">
+          <DependencyGraph workbookId={data.workbook_id} />
+        </div>
+      </section>
+
       <section aria-label="Sheets">
-        <h2 className="text-lg font-semibold">Sheets</h2>
-        {data.stats.sheets.length === 0 ? (
+        <h2 className="text-lg font-semibold">Sheets</h2>        {data.stats.sheets.length === 0 ? (
           <EmptyState message="No sheets found in this workbook." />
         ) : (
           <ul className="mt-2 space-y-1">

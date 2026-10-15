@@ -1,6 +1,7 @@
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { api } from "./api/client";
+import { AskPage } from "./pages/AskPage";
 import { IssuesPage } from "./pages/IssuesPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { SetupPage } from "./pages/SetupPage";
@@ -77,6 +78,7 @@ function Layout() {
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/w/:id" element={<OverviewPage />} />
           <Route path="/w/:id/issues" element={<IssuesPage />} />
+          <Route path="/w/:id/ask" element={<AskPage />} />
           <Route path="/w/:id/sheets/:name" element={<SheetPage />} />
           <Route
             path="*"

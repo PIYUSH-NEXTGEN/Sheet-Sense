@@ -17,6 +17,7 @@ from conftest import FIXTURE_DIR, FakeLLMClient
 @pytest.fixture(autouse=True)
 def _mock_llm(monkeypatch):
     """All API tests run with a fake model (golden rule 4)."""
+    import app.api.chat as chat
     import app.core.pipeline as pipeline
 
     monkeypatch.setattr(
@@ -24,6 +25,7 @@ def _mock_llm(monkeypatch):
         "default_client_factory",
         lambda: FakeLLMClient(),
     )
+    monkeypatch.setattr(chat, "get_client", lambda: FakeLLMClient())
 
 DIRTY_BYTES = (FIXTURE_DIR / "dirty.xlsx").read_bytes()
 CLEAN_BYTES = (FIXTURE_DIR / "clean.xlsx").read_bytes()
@@ -152,6 +154,10 @@ def test_full_flow_dirty(client):
     assert 'filename="dirty.md"' in export.headers["content-disposition"]
     assert "Summary!B5" in export.text
     assert "Suspicious cells to review" in export.text
+    assert "| Severity | Detector | Cell | Finding | Formula |" in export.text
+    assert "## Limitations" in export.text
+    assert "Fake purpose." in export.text  # sheet explanations included
+    assert "Original formula" in export.text
 
     assert client.delete(f"/api/workbooks/{wid}").json() == {"deleted": wid}
     assert client.get(f"/api/workbooks/{wid}/overview").status_code == 404

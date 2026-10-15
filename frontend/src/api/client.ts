@@ -3,6 +3,7 @@
  * are to this URL — no CDN assets, no telemetry.
  */
 import type {
+  AskResponse,
   GraphData,
   GraphLevel,
   HealthStatus,
@@ -191,6 +192,24 @@ export const api = {
       throw new ApiError(resp.status, `Export failed: ${resp.statusText}`);
     }
     return await resp.blob();
+  },
+
+  ask(workbookId: string, question: string): Promise<AskResponse> {
+    return request<AskResponse>(`/api/workbooks/${workbookId}/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    }).then((body) => {
+      checkShape(
+        typeof body === "object" &&
+          body !== null &&
+          typeof (body as { answer?: unknown }).answer === "string" &&
+          Array.isArray((body as { cited_cells?: unknown }).cited_cells) &&
+          Array.isArray((body as { chain?: unknown }).chain),
+        "answer",
+      );
+      return body;
+    });
   },
 };
 

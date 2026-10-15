@@ -46,6 +46,9 @@ class FakeLLMClient:
         "key_outputs": ["Fake output"],
         "overview": "Fake overview.",
         "reading_order": ["FakeSheet"],
+        "target": "Summary!B5",
+        "answer": "Fake answer.",
+        "cited_cells": ["Summary!B5", "Summary!B4", "Nope!Z9"],
     }
 
     def __init__(self, model: str = "fake-test-model", fail: bool = False):

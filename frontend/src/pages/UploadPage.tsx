@@ -40,6 +40,7 @@ export function UploadPage() {
   const remove = useMutation({
     mutationFn: (workbookId: string) => api.deleteWorkbook(workbookId),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["workbooks"] }),
+    onError: (error: unknown) => setUploadError(apiErrorMessage(error)),
   });
 
   const analyzing = activeId !== null;

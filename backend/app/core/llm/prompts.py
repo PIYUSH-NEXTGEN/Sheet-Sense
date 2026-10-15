@@ -66,3 +66,39 @@ Facts:
 Reply with JSON only: {{"overview": "<2-3 plain sentences>", "reading_order": ["<sheet names in reading order>"]}}.
 
 {_STANDING_INSTRUCTION}"""
+
+
+def qa_pick_prompt(question: str, candidates: list[dict[str, Any]]) -> str:
+    """User message asking the model to pick one candidate cell (Phase 6).
+
+    ``candidates`` are ``{"ref": key, "label": human label}`` dicts built
+    in code; the model must reply with one of the keys.
+    """
+    return f"""Pick the single spreadsheet cell the user is asking about. Reply with that cell only — it must be one of the candidate refs.
+
+Question: {question}
+
+Candidates (ref + human label):
+{_facts_block({"candidates": candidates})}
+
+Reply with JSON only: {{"target": "<one of the candidate refs>"}}.
+
+{_STANDING_INSTRUCTION}"""
+
+
+def qa_answer_prompt(
+    question: str, target: str, chain: list[dict[str, Any]]
+) -> str:
+    """User message asking the model to answer from the traced chain (Phase 6)."""
+    return f"""Answer the user's question using ONLY the traced calculation chain below. Cite the cells you used.
+
+Question: {question}
+
+Target cell: {target}
+
+Traced chain (target first, then its precedents):
+{_facts_block({"chain": chain})}
+
+Reply with JSON only: {{"answer": "<2-4 plain sentences grounded in the chain>", "cited_cells": ["<cells from the chain you used>"]}}.
+
+{_STANDING_INSTRUCTION}"""

@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2",
     "sqlalchemy",
     "httpx",
+    "python-multipart",
 ]
 
 [project.optional-dependencies]

@@ -20,8 +20,9 @@ export function FormulaGroupCard({
   const labelEntries = Object.entries(group.labels ?? {});
   return (
     <section
+      id={`group-${group.id}`}
       aria-label={`Formula group ${group.sheet}!${rangeLabel(group.cells)}`}
-      className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+      className="scroll-mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
     >
       <h3 className="font-mono text-sm font-semibold">
         {group.sheet}!{rangeLabel(group.cells)}{" "}

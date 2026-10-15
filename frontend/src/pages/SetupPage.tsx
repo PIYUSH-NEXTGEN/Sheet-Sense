@@ -46,7 +46,6 @@ export function SetupPage() {
 
   const { ollama, model } = health.data;
   const ready = ollama.reachable && model.available;
-  const wantedModel = model.name || "gemma3:4b";
 
   return (
     <div className="space-y-4">
@@ -67,18 +66,26 @@ export function SetupPage() {
           {ollama.reachable && !model.available && (
             <section aria-label="Model missing" className="space-y-2">
               <h2 className="text-lg font-semibold">Model not available</h2>
-              <p className="text-sm">
-                Pull a Gemma variant your hardware can handle (see{" "}
-                <code>ollama list</code>), then set <code>MODEL_NAME</code> to
-                that exact name — e.g. in <code>backend/.env</code> — and
-                restart the backend:
-              </p>
-              <Commands
-                lines={[
-                  `ollama pull ${wantedModel}`,
-                  `MODEL_NAME=${wantedModel}`,
-                ]}
-              />
+              {model.name ? (
+                <>
+                  <p className="text-sm">
+                    Pull the configured model, then restart the backend:
+                  </p>
+                  <Commands lines={[`ollama pull ${model.name}`]} />
+                </>
+              ) : (
+                <>
+                  <p className="text-sm">
+                    No model is configured. See which Gemma variants you have
+                    installed, then set <code>MODEL_NAME</code> to that exact
+                    name — e.g. in <code>backend/.env</code> — and restart
+                    the backend:
+                  </p>
+                  <Commands
+                    lines={["ollama list", "MODEL_NAME=<installed-gemma-model>"]}
+                  />
+                </>
+              )}
             </section>
           )}
         </>

@@ -32,6 +32,9 @@ uploads/
 # Unneeded project docs scratchpad
 docs/
 
+# Working spec (local reference copy, not part of the build)
+agent.md
+
 # Local env config (see backend/.env.example)
 .env
 

@@ -123,3 +123,19 @@ export interface GraphData {
   nodes: Array<Record<string, unknown>>;
   edges: Array<{ source: string; target: string }>;
 }
+
+export interface ChainEntry {
+  ref: string;
+  formula: string | null;
+  sheet: string | null;
+  address: string | null;
+  group_id: string | null;
+}
+
+export interface AskResponse {
+  question: string;
+  target: string | null;
+  answer: string;
+  cited_cells: string[];
+  chain: ChainEntry[];
+}
