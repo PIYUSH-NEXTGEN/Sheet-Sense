@@ -14,12 +14,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import config as app_config
 from .api import analysis, chat, export, workbooks
 from .core.llm.client import ollama_status
-from .db.session import init_db
+from .db.session import init_db, session_scope
+from .db.tables import STATUS_EXPLAINING, STATUS_READY, WorkbookRow
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    # A crash mid-phase-B leaves rows "explaining" with valid phase A
+    # results; fold them back to servable instead of stranding them.
+    with session_scope() as session:
+        session.query(WorkbookRow).filter(
+            WorkbookRow.status == STATUS_EXPLAINING
+        ).update(
+            {WorkbookRow.status: STATUS_READY}, synchronize_session=False
+        )
     yield
 
 
@@ -27,7 +36,7 @@ app = FastAPI(title="SheetSense", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
