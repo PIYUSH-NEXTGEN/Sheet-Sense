@@ -79,6 +79,10 @@ Frontend checks: `cd frontend && npm run build` (runs `tsc --noEmit` + Vite buil
 
 ## 60-second demo (do installs/pulls online first, then turn off Wi-Fi)
 
+Tip: analyze the sample workbook once while online (first run loads the
+model and takes ~4 minutes); every rerun is instant from cache, so the
+60-second tour below works fully offline afterwards.
+
 1. (0:00) With Wi-Fi **off**, open http://localhost:5173 — Setup shows green.
 2. (0:10) Drag in `backend/tests/fixtures/harbor-supply-pricing.xlsx`; watch the SSE progress bar.
 3. (0:20) Overview: plain-English summary, stats, dependency map (toggle Sheets/Groups).
@@ -105,7 +109,8 @@ Frontend checks: `cd frontend && npm run build` (runs `tsc --noEmit` + Vite buil
 | Blank page / blocked fetches | Open `http://localhost:5173`, not `http://127.0.0.1:5173` (CORS) |
 | "Unexpected response … Is the SheetSense backend running on port 8000?" | Another app is answering on :8000 — stop it and restart uvicorn |
 | Explanations say "unavailable" | `ollama list` → set exact name in `backend/.env` as `MODEL_NAME`, restart backend |
-| First analysis is slow | Normal — Gemma loads once (~4 min for the sample workbook on CPU); reruns are instant from SQLite cache |
+| First analysis is slow | Normal — Gemma loads once (~4 min for the sample workbook on CPU); reruns are instant from SQLite cache. Trivial formula groups are auto-described without model calls; remaining groups are batched per sheet |
+| Want more model parallelism | Default is 1 worker because a stock Ollama server answers one request at a time (measured: 3 workers were slower). To raise it, set the server side first (`OLLAMA_NUM_PARALLEL=4` where Ollama runs), then match it here with `LLM_WORKERS=4` in `backend/.env` |
 
 ## How it works (short)
 

@@ -63,3 +63,12 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+# ============ Internal artifacts (do not commit) ============
+CONVERSATION_LOG.md
+TEST_REPORT.md
+*.log
+
+# Build outputs
+backend/build/
+frontend/test-results/
