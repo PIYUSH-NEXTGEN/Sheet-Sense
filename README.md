@@ -1,281 +1,533 @@
-﻿# SheetSense — Spreadsheet Inheritance Translator
+﻿# SheetSense: Spreadsheet Inheritance Translator
 
-SheetSense helps you make sense of an Excel workbook you inherited — the kind named `pricing_FINAL_v7_use_this_one.xlsx` whose original author is long gone. You get a plain-English overview of each sheet, a ranked list of suspicious cells worth reviewing, a dependency map showing how sheets and cells feed into each other, and a Q&A box that traces a number back to its source cells with clickable citations.
+SheetSense helps you understand Excel workbooks that someone else created and nobody fully understands anymore.
 
-It runs entirely on your machine. The workbook never leaves your computer.
+Think of a file named `pricing_FINAL_v7_use_this_one.xlsx`. The person who built it has left, the formulas have barely been documented, and nobody knows which cells can be safely edited. The spreadsheet still runs the business, so replacing it is not an option.
 
-Deterministic Python code finds the facts (formulas, cell references, dependency graphs, suspicious patterns). A local Gemma model — served through Ollama — only turns those facts into plain-English explanations. The model never decides what's wrong and never invents dependencies.
+SheetSense helps you investigate that workbook without having to trace every formula manually.
 
-It's for anyone who's inherited a spreadsheet: an accountant taking over a client's books, a small business owner puzzling through a pricing model, an operations analyst handed a file nobody else wants to touch.
+It generates a plain-English overview of each sheet, flags suspicious cells for review, maps dependencies between sheets, and lets you ask questions about where a number comes from. It also exports a Markdown report that can be used when handing the workbook over to someone else.
 
-## Problem Statement
+**The entire analysis runs locally. Your workbook does not need to be uploaded to an external service.**
 
-**Problem:** Understanding someone else's spreadsheet takes far longer than building your own. Files circulate with names like `pricing_FINAL_v7_use_this_one.xlsx`, the creator has left, and nobody remembers why certain formulas exist, which cells are safe to edit, or whether the bottom-line numbers are even right. A spreadsheet with a wrong formula can keep producing believable numbers for months without anyone noticing.
+**Code finds the facts. A local language model explains them.**
 
-**Existing gap:** You could paste a formula into a chatbot and ask it to explain. That works for a single cell. It breaks down with thousands of formulas across multiple sheets — a chatbot doesn't see the full dependency structure, can't systematically spot the one formula that breaks a repeating pattern, and can't handle a workbook too large for its context window. There's also the privacy problem: client financials, payroll, and internal pricing don't belong in a hosted AI service.
+## What SheetSense does
 
-**Approach:** SheetSense reads the workbook itself with openpyxl, tokenizes formulas, builds a dependency graph with networkx, and runs code-based checks that flag suspicious constants, inconsistent formula patterns, short SUM ranges, unused inputs, error values, circular references, and unit mismatches. Only then does a local Gemma model explain the verified findings in plain English. Code finds the facts; the model phrases them.
+- **Explains your workbook:** Get an overview of each sheet based on its actual structure and contents.
+- **Finds suspicious formulas:** Review hardcoded constants, inconsistent formula patterns, potentially incomplete SUM ranges, unused inputs, error values, circular references, and unit mismatches.
+- **Maps dependencies:** See how sheets and cells depend on one another.
+- **Answers questions:** Ask questions such as "Where does the total with surcharge come from?" and follow the answer through its source cells.
+- **Provides cell citations:** Open cited cells directly in the interface. Citations are checked against the dependency chain used to answer the question.
+- **Exports a handover report:** Download a Markdown document summarizing the workbook structure and flagged items.
+- **Keeps your data local:** Workbook analysis, storage, and model inference run on your machine.
 
-## Features
+SheetSense is a tool for investigating spreadsheets, not an automated financial auditor. A suspicious formula is something worth checking, not proof that the formula is wrong.
 
-Implemented:
+## The problem I wanted to solve
 
-- **Plain-English workbook overview** — a summary of each sheet and its purpose, generated from verified structure rather than guesswork.
-- **Suspicious cell review** — a ranked list of cells to look at (hardcoded values inside formulas, formula pattern breaks, SUM ranges that might miss data, unused inputs, error values, circular references, unit mismatches). These are "cells to review," not declared errors — SheetSense is not an audit.
-- **Dependency map** — sheet-level view of how sheets and cells feed into one another, built from the actual formula references.
-- **Q&A with citations** — ask where a number comes from, trace the dependency chain first, and get clickable, validated cell citations that point back to the evidence.
-- **Fully local** — analysis and inference run on your machine; nothing uploads anywhere.
-- **Markdown export** — export a handoff document documenting the workbook's structure and flagged items.
+Understanding someone else's spreadsheet can take longer than building your own.
 
-Not yet built / planned:
+An accountant might inherit a client's financial workbook. A small business owner might need to understand an old pricing model. An operations analyst might be handed a spreadsheet that nobody on the team remembers creating.
 
-- Group-level dependency map toggle (the current map is sheet-level).
-- Packaged desktop application and workbook handover reporting as a service (business ideas described by the author, not implemented features).
+The difficult part is not necessarily using Excel. It is figuring out why the workbook works the way it does.
 
-## How It Works
+You can compare formulas row by row, trace references across sheets, or ask the original author. But that becomes difficult when a workbook contains thousands of formulas, and the original author may no longer be available.
 
-1. **Input:** You upload an Excel workbook (`.xlsx` works directly; legacy `.xls` is converted locally with LibreOffice when installed). `.xlsm` files with macros are rejected.
-2. **Validation:** The file is parsed with openpyxl; corrupt or unreadable workbooks raise a clear error instead of a raw traceback. VBA/macros are not executed and never will be.
-3. **Processing:**
-   - Formulas are tokenized to extract cell and range references, including cross-sheet and absolute references.
-   - A directed dependency graph (networkx) connects precedent cells to the cells that depend on them.
-   - Each formula is normalized to a relative form so repetitive patterns can be grouped and outliers spotted (for example, `=B5*C5` and `=B6*C6` are the same pattern).
-   - Deterministic detectors flag suspicious constants, inconsistent patterns, incomplete SUM ranges, unused inputs, error values, circular references, and unit mismatches.
-4. **Storage / external services:** Results are cached in SQLite (`~/.sheetsense` or `DATA_DIR`). The backend calls a locally running Ollama instance (`http://localhost:11434`) for Gemma explanations only when useful. No external APIs, no telemetry.
-5. **Output:** A React frontend shows the overview, issue list, dependency map, and Q&A page. Analysis progress is streamed to the interface via SSE. You can export a Markdown handoff report.
+There is another problem: spreadsheets can produce believable numbers even when a formula is wrong. A missing cell in a SUM range or a hardcoded constant in a repeated formula can go unnoticed for months.
 
-### Key Design Decisions
+A chatbot can explain an individual formula, but that does not give it the full dependency structure of a large workbook. It also cannot reliably identify every formula that differs from a repeated pattern simply by looking at a few pasted examples.
 
-- **Code finds the facts, the model explains them.** Deterministic Python handles parsing, graph building, and detection. The LLM only phrases verified facts into explanations and is never allowed to declare a formula wrong or invent a dependency. Citations outside the traced chain are rejected.
-- **Local inference.** Ollama + Gemma runs on your machine so client financials never leave your hardware, there's no per-request API bill, and the tool works offline once the model is installed. Trade-off: smaller local models can give weaker explanations, and you need suitable hardware.
-- **Phase A first, Phase B second.** Deterministic analysis (phase A) runs and persists before model explanations (phase B). If the model fails or is interrupted, phase A results are untouched and the workbook is still usable.
-- **No formula execution.** SheetSense reads formulas statically; it never executes VBA, macros, or formulas, which keeps it safe with untrusted files.
+I built SheetSense to make that investigation more systematic. Instead of asking a model to figure everything out from raw spreadsheet data, the application analyzes the workbook first and uses the model to explain the results.
+
+## How it works
+
+The analysis is split into two phases. This keeps the core analysis independent of the language model.
+
+### 1. Read the workbook
+
+SheetSense uses `openpyxl` to read Excel worksheets, formulas, and available cached values. It validates the workbook before processing it. Legacy `.xls` files can be converted locally when LibreOffice is installed.
+
+Macros are not executed, and `.xlsm` files are rejected.
+
+### 2. Resolve formula references
+
+Formulas are tokenized to identify the cells and ranges they reference, including absolute references and references to other sheets.
+
+This gives the application structured information about how formulas connect to one another.
+
+### 3. Build the dependency graph
+
+Using `networkx`, SheetSense builds a directed graph connecting cells to the cells that depend on them.
+
+The graph supports dependency tracing, cycle detection, and questions about where a value originates.
+
+### 4. Compare formula patterns
+
+Formulas are normalized into relative patterns so that formulas in different rows can be compared.
+
+For example, `=B5*C5` and `=B6*C6` follow the same pattern. If another cell in that sequence uses a different formula structure, SheetSense can flag it for review.
+
+This is more systematic than asking a language model to inspect a handful of formulas and guess whether they are consistent.
+
+### 5. Run rule-based checks
+
+The application uses deterministic Python logic to identify suspicious patterns, including:
+
+- Hardcoded constants inside formulas
+- Formula patterns that differ from neighboring formulas
+- SUM ranges that might omit relevant data
+- Unused inputs
+- Spreadsheet error values
+- Circular references
+- Potential unit mismatches
+
+These findings come from code and predefined rules, not from the language model deciding what looks wrong.
+
+### 6. Generate explanations locally
+
+Once the structural analysis is complete, SheetSense sends small bundles of verified facts to a Gemma model running through Ollama.
+
+The model returns structured explanations that the application can display alongside the underlying evidence. Simple cases can use templates instead of requiring a model call.
+
+If the model fails or is interrupted, the deterministic analysis remains available.
+
+### 7. Answer questions with evidence
+
+When a user asks where a number comes from, SheetSense traces the relevant dependency chain before generating an explanation.
+
+The model receives information about that chain and explains how the referenced cells contribute to the result. Citations are validated against the traced chain, and citations outside it are rejected.
+
+The goal is to make answers easier to verify rather than asking users to trust a generated explanation without evidence.
 
 ## Architecture
 
-### System Architecture
+The project uses a React frontend, a FastAPI backend, SQLite for local storage, and Ollama for local model inference.
 
-The backend is a FastAPI service on `127.0.0.1:8000`. The frontend is a React + Vite app on `http://localhost:5173`. Analysis runs in two phases: phase A (parse → refs → graph → grouping → detectors → SQLite) and phase B (model explanations for groups, sheets, and workbook). Progress streams to the UI via SSE.
+### System overview
 
-<!-- Add a Mermaid diagram or link to docs/ARCHITECTURE.md for a detailed diagram. -->
+```mermaid
+flowchart TD
+    A[Excel Workbook] --> B[Workbook Parser]
+    B --> C[Formula Reference Extraction]
+    C --> D[Dependency Graph]
+    D --> E[Formula Grouping]
+    E --> F[Rule-Based Detectors]
+    F --> G[SQLite Results Cache]
+    G --> H[Verified Facts]
+    H --> I[Local Gemma via Ollama]
+    I --> J[Plain-English Explanations]
+    G --> K[FastAPI REST and SSE]
+    J --> K
+    K --> L[React Frontend]
+    L --> M[Overview and Issues]
+    L --> N[Dependency Map]
+    L --> O[Ask and Cell Citations]
+    L --> P[Markdown Export]
+```
 
-### Data Flow
+### Key design decisions
 
-Workbook file → openpyxl reader → reference tokenizer → networkx dependency graph → formula grouping → deterministic detectors → SQLite cache → (phase B) Ollama/Gemma explanations → FastAPI REST + SSE → React frontend.
+**Deterministic analysis comes first.** Formula parsing, dependency tracing, and suspicious-pattern detection do not depend on an LLM. This makes the core logic easier to test and inspect.
 
-### Important Components
+**Model inference is local.** Gemma runs through Ollama, so workbook contents do not need to be sent to a hosted AI provider.
 
-- **Backend (`backend/app/`)** — FastAPI app (`main.py`), config, API routers for workbooks, analysis, chat/Q&A, and export.
-- **Parser (`backend/app/core/parser/`)** — reads the workbook and extracts formulas and cached values.
-- **References (`backend/app/core/parser/refs.py`)** — tokenizes formulas and resolves cell/range references across sheets.
-- **Graph (`backend/app/core/graph/`)** — builds the dependency graph and answers precedent/dependent queries.
-- **Grouping (`backend/app/core/grouping/`)** — normalizes formulas to relative patterns and groups repetitive ones.
-- **Detectors (`backend/app/core/detectors.py`)** — code-based rules that flag suspicious cells.
-- **Explainer (`backend/app/core/llm/`)** — talks to local Ollama; small fact bundles in, structured explanations out. Templates handle trivial groups without a model call.
-- **Database (`backend/app/db/`)** — SQLite via SQLAlchemy; stores workbooks, results, and cached explanations.
-- **Frontend (`frontend/src/`)** — React pages (setup, upload, overview, issues, sheet map, ask), TanStack Query for data fetching, xyflow for the dependency graph, Zustand for state.
+**Analysis and explanations are separate phases.** The application stores deterministic results before generating model explanations. A model failure does not discard the underlying analysis.
 
-## Tech Stack
+**Formulas are read, not executed.** SheetSense does not run spreadsheet formulas or VBA macros. This is important when inspecting workbooks from unknown sources.
+
+**SQLite keeps the setup simple.** It provides persistent storage without requiring users to configure a separate database server.
+
+## Tech stack
 
 | Technology | Purpose |
-|------------|---------|
-| Python 3.11+ | Core implementation |
-| FastAPI | Backend web framework |
+|---|---|
+| Python 3.11+ | Workbook analysis and backend logic |
+| FastAPI | Backend API |
 | Uvicorn | ASGI server |
-| openpyxl | Reading Excel formulas and cached values |
+| openpyxl | Reading Excel workbooks and formulas |
 | networkx | Dependency graph construction and queries |
-| SQLAlchemy + SQLite | Persistent storage of workbooks and results |
-| pytest | Automated backend tests |
-| Playwright | End-to-end frontend tests |
-| React 19 | Frontend UI |
-| Vite | Frontend build tool and dev server |
-| TypeScript | Frontend type checking |
+| SQLAlchemy | Database access |
+| SQLite | Local storage and cached results |
+| pytest | Backend testing |
+| Playwright | Frontend end-to-end testing |
+| React 19 | User interface |
+| TypeScript | Frontend type safety |
+| Vite | Development server and production builds |
 | Tailwind CSS | Styling |
-| React Router | Client-side routing |
-| TanStack Query | Server state management |
+| React Router | Frontend navigation |
+| TanStack Query | Server state and data fetching |
 | xyflow/react | Dependency graph visualization |
-| Ollama + Gemma | Local LLM for plain-English explanations |
+| Zustand | Frontend state management |
+| Ollama | Local model runtime |
+| Gemma | Plain-English explanations |
 
-Non-obvious choices: networkx for the graph because dependency tracing needs real graph queries (precedents, dependents, cycles); SQLite because it's file-based, requires no separate server, and fits the local-first privacy goal.
+## Project structure
 
-## Codebase Structure
+The repository is divided into a Python backend, a React frontend, tests, and documentation.
 
 ```text
 Sheet-Sense/
 ├── backend/
-│   ├── .env.example          # Example environment config (copy to .env; never commit .env)
-│   ├── pyproject.toml        # Python project config and dependencies
+│   ├── .env.example
+│   ├── pyproject.toml
 │   ├── app/
-│   │   ├── main.py           # FastAPI entrypoint, CORS, and health check
-│   │   ├── config.py         # Settings (MODEL_NAME, OLLAMA_URL, LLM_WORKERS, DATA_DIR)
-│   │   ├── api/              # REST routes: workbooks, analysis, chat, export
-│   │   ├── core/             # parser, refs, graph, grouping, detectors, llm, db, export
-│   │   ├── db/               # SQLite session and tables
-│   │   └── export/           # Markdown handoff export
-│   └── tests/                # pytest suite + fixtures and edge-case workbooks
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── api/
+│   │   ├── core/
+│   │   │   ├── parser/
+│   │   │   ├── graph/
+│   │   │   ├── grouping/
+│   │   │   ├── detectors.py
+│   │   │   └── llm/
+│   │   ├── db/
+│   │   └── export/
+│   └── tests/
 ├── frontend/
-│   ├── package.json          # Node project config
-│   ├── vite.config.ts        # Vite build/dev config
-│   ├── tsconfig.json         # TypeScript config
-│   ├── playwright.config.ts  # E2E test config
-│   ├── src/
-│   │   ├── api/              # API client and types
-│   │   ├── components/       # UI components (graph, issues, chat, upload, etc.)
-│   │   ├── hooks/            # useProgress, useWorkbook
-│   │   └── pages/            # Setup, Upload, Overview, Issues, Sheet, Ask
-│   └── test-results/         # Playwright results
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── playwright.config.ts
+│   └── src/
+│       ├── api/
+│       ├── components/
+│       ├── hooks/
+│       └── pages/
 ├── docs/
-│   ├── screenshots/          # setup, home, overview, map, issues, ask, keyboard
-│   ├── ARCHITECTURE.md       # architecture notes (full doc pending)
+│   ├── screenshots/
+│   ├── ARCHITECTURE.md
 │   └── index.html
-├── .gitignore
-├── LICENSE                   # MIT
+├── LICENSE
 ├── README.md
-├── agent.md                  # agent working notes
-├── TEST_REPORT.md            # QA test report
+├── TEST_REPORT.md
 └── design.jpg
 ```
 
-Where to contribute:
+### Where to look in the codebase
 
-- `backend/app/core/detectors.py` — add or tune suspicious-cell rules.
-- `backend/app/core/parser/` and `backend/app/core/graph/` — change how workbooks are read or how references are resolved.
-- `backend/app/core/llm/` — adjust prompts, model client, or templates.
-- `frontend/src/pages/` and `frontend/src/components/` — UI changes (pages are Setup, Upload, Overview, Issues, Sheet, Ask).
-- `backend/app/main.py` — CORS, health, and router wiring (the backend is locked to `127.0.0.1` by design).
+| Path | What it contains |
+|---|---|
+| `backend/app/main.py` | FastAPI entry point, CORS configuration, health check, and router setup |
+| `backend/app/config.py` | Application settings, model name, Ollama URL, and data directory |
+| `backend/app/api/` | API routes for workbooks, analysis, chat, and exports |
+| `backend/app/core/parser/` | Workbook parsing and formula reference extraction |
+| `backend/app/core/parser/refs.py` | Cell, range, cross-sheet, and absolute-reference handling |
+| `backend/app/core/graph/` | Dependency graph construction and traversal |
+| `backend/app/core/grouping/` | Formula normalization and pattern grouping |
+| `backend/app/core/detectors.py` | Rules for identifying suspicious cells |
+| `backend/app/core/llm/` | Ollama client, explanation prompts, and response handling |
+| `backend/app/db/` | SQLite database session and tables |
+| `backend/app/export/` | Markdown handover report generation |
+| `backend/tests/` | Backend tests, fixtures, and edge cases |
+| `frontend/src/api/` | API client and TypeScript types |
+| `frontend/src/components/` | Reusable UI components, including the graph and issue views |
+| `frontend/src/hooks/` | Workbook and analysis-progress hooks |
+| `frontend/src/pages/` | Setup, upload, overview, issues, sheet map, and Ask pages |
+| `docs/screenshots/` | Application screenshots |
+| `TEST_REPORT.md` | QA test report |
 
-## Getting Started
+If you want to add a detection rule, start with `backend/app/core/detectors.py`. If you want to change formula tracing, look at the parser and graph modules. For interface changes, start with `frontend/src/pages/` and `frontend/src/components/`.
+
+## Getting started
+
+SheetSense runs locally and requires Python, Node.js, and Ollama.
 
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 18+ (for the frontend)
-- [Ollama](https://ollama.com) with enough disk/RAM for a Gemma instruct model, e.g. `gemma3:4b` (~3.3 GB). Check installed models with `ollama list`.
+- Python 3.11 or newer
+- Node.js 18 or newer
+- npm
+- [Ollama](https://ollama.com/)
+- Enough disk space and available memory for your chosen Gemma model
 
-### Installation
+The example configuration uses `gemma3:4b`, which requires downloading the model before its first use.
+
+### 1. Clone the repository
 
 ```bash
-# Clone the repository
 git clone https://github.com/PIYUSH-NEXTGEN/Sheet-Sense.git
 cd Sheet-Sense
-
-# Backend
-cd backend
-python -m venv .venv
-
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-# source .venv/bin/activate
-
-pip install -e ".[test]"
-
-# Copy env config and edit MODEL_NAME to an installed model (never commit .env):
-copy .env.example .env        # Windows
-# cp .env.example .env        # macOS/Linux
-
-# Pull the model (needs network once, then never again):
-ollama pull gemma3:4b
-ollama serve                  # only if Ollama isn't already running
-
-# Frontend
-cd ../frontend
-npm install
 ```
 
-### Configuration
+### 2. Set up the backend
 
-Copy `backend/.env.example` to `backend/.env` and set `MODEL_NAME` to the exact Gemma variant you pulled (e.g. `gemma3:4b`). Optional overrides: `OLLAMA_URL` (default `http://localhost:11434`) and `LLM_WORKERS` (default 1 — a stock Ollama server answers one request at a time, so more workers on the client side can actually slow things down unless you also raise `OLLAMA_NUM_PARALLEL` on the server).
+```bash
+cd backend
+python -m venv .venv
+```
 
-Never include real API keys, credentials, or production secrets. There are no API keys in this project — everything is local.
+Activate the virtual environment.
 
-### Run Locally
+**Windows PowerShell**
 
-Terminal 1 — backend (from `backend/`):
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+**macOS or Linux**
+
+```bash
+source .venv/bin/activate
+```
+
+Install the project and its test dependencies:
+
+```bash
+python -m pip install -e ".[test]"
+```
+
+### 3. Configure Ollama
+
+Copy the example environment file.
+
+**Windows PowerShell**
+
+```powershell
+Copy-Item .env.example .env
+```
+
+**macOS or Linux**
+
+```bash
+cp .env.example .env
+```
+
+Pull the example model:
+
+```bash
+ollama pull gemma3:4b
+```
+
+Make sure Ollama is running. If it is not already running as a background service, start it with:
+
+```bash
+ollama serve
+```
+
+Set `MODEL_NAME` in `backend/.env` to the exact model name installed on your machine.
+
+### 4. Start the backend
+
+From the `backend/` directory, with the virtual environment activated:
 
 ```bash
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Terminal 2 — frontend (from `frontend/`):
+The backend should now be available at `http://127.0.0.1:8000`.
+
+### 5. Set up the frontend
+
+Open a second terminal from the repository root:
 
 ```bash
+cd frontend
+npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` (use `localhost`, not `127.0.0.1` — the backend's CORS list allows exactly that origin).
+Open the local address printed by Vite, normally:
 
-Upload `backend/tests/fixtures/harbor-supply-pricing.xlsx` and follow the progress bar into the overview, dependency map, issues list, and Ask page.
+`http://localhost:5173`
 
-Verify the backend is reachable: `curl http://127.0.0.1:8000/api/health` should print `{"backend":"ok", ...}`.
+Use `localhost` for the frontend. The backend's CORS configuration allows that origin.
 
-## Usage
+### 6. Try a workbook
 
-- **Upload:** Drag a workbook onto the setup page. `.xlsx` works directly; `.xls` is converted locally if LibreOffice is installed; `.xlsm` is rejected.
-- **Overview:** Read the plain-English summary of each sheet and the dependency map.
-- **Issues:** Review the ranked list of suspicious cells, filterable by severity. Examples from the sample fixture: a hardcoded `1.15` in `Summary!B5`, a pattern break in `Pricing!C13`, a short `SUM` in `Summary!B3`, orphan inputs, and a circular reference.
-- **Ask:** Type a question like *"Where does the total with surcharge come from?"* The app traces the dependency chain first, then explains it with clickable cell citations that land you on the relevant sheet.
-- **Export:** Download a Markdown handoff document summarizing structure and flagged items.
+Upload the included sample workbook:
 
-Example API call:
+`backend/tests/fixtures/harbor-supply-pricing.xlsx`
+
+Follow the analysis progress and explore the overview, dependency map, issues list, and Ask page. You can also export the results as a Markdown handover document.
+
+To check that the backend is responding, run:
 
 ```bash
 curl http://127.0.0.1:8000/api/health
 ```
 
-Screenshots: see `docs/screenshots/` — `setup.png`, `home.png`, `overview.png`, `map.png`, `issues.png`, `ask.png`, `keyboard.png`.
+The response should contain `"backend":"ok"`.
 
-## Configuration Reference
+## Using SheetSense
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `MODEL_NAME` | Yes | None | Installed Gemma model name, e.g. `gemma3:4b` — see `ollama list` |
+### Workbook overview
+
+Start with the overview to understand the sheets and their relationships before investigating individual formulas.
+
+### Suspicious cells
+
+Review the ranked list of flagged cells. For example, the included sample workbook contains a hardcoded `1.15` in `Summary!B5`, a formula pattern break in `Pricing!C13`, and a potentially short SUM range in `Summary!B3`.
+
+These are examples of findings to investigate, not automatic declarations of errors.
+
+### Dependency map
+
+Use the sheet-level map to understand how data flows between worksheets. It is built from the workbook's formula references rather than generated by the language model.
+
+### Ask a question
+
+Try a question such as:
+
+> Where does the total with surcharge come from?
+
+SheetSense traces the dependency chain, generates an explanation, and provides clickable cell citations to help you verify the answer.
+
+### Export a report
+
+Export the workbook analysis as Markdown. The report can help document an unfamiliar workbook for a colleague, client, or future maintainer.
+
+## Configuration
+
+The backend reads its configuration from `backend/.env`.
+
+| Variable | Required | Default or example | Purpose |
+|---|---|---|---|
+| `MODEL_NAME` | Yes | `gemma3:4b` | Name of the installed Gemma model |
 | `OLLAMA_URL` | No | `http://localhost:11434` | Local Ollama endpoint |
-| `LLM_WORKERS` | No | `1` | Parallel explanation workers; keep at 1 unless you raise `OLLAMA_NUM_PARALLEL` server-side |
-| `DATA_DIR` | No | `~/.sheetsense` | Local directory for stored workbooks and cached results |
+| `LLM_WORKERS` | No | `1` | Number of concurrent explanation workers |
+| `DATA_DIR` | No | `~/.sheetsense` | Directory for stored workbooks and cached results |
+
+Keep `LLM_WORKERS` at `1` unless your Ollama server is configured to handle more parallel requests. Increasing the client-side worker count alone may not improve performance.
+
+Do not commit `.env` files or credentials. SheetSense does not require external AI API keys.
+
+## Privacy and security
+
+Privacy was one of the reasons for building SheetSense as a local application.
+
+- **Local processing:** Workbooks are processed and stored on your machine.
+- **Local model inference:** Explanations are generated through Ollama on the same machine.
+- **No external AI API:** Workbook contents are not sent to a hosted language model.
+- **No telemetry or analytics:** The application does not include telemetry or analytics services.
+- **No CDN assets:** Frontend JavaScript and CSS are bundled locally, and the application uses system fonts.
+- **No macro execution:** VBA macros are not executed, and `.xlsm` files are rejected.
+- **Local-only backend:** FastAPI binds to `127.0.0.1`, rather than a public network interface.
+
+The browser communicates with the backend at `http://127.0.0.1:8000`, and the backend communicates with Ollama at `http://localhost:11434`.
+
+The first-time setup requires downloading the repository dependencies and model. Once everything is installed, workbook analysis and inference can run without an internet connection.
+
+Local processing reduces the need to send sensitive workbook data elsewhere, but it does not eliminate every security risk. Keep your machine secure and review any files you choose to analyze.
 
 ## Testing
 
+The backend tests cover parsing, reference extraction, graph construction, formula grouping, detection rules, API endpoints, Q&A, and unusual workbook cases.
+
+From `backend/`, run:
+
 ```bash
-cd backend
-python -m pytest            # mocked LLM; passes without Ollama
-python -m pytest -m ollama  # one live test, skipped unless Ollama is running
+python -m pytest
 ```
 
-The suite covers parsing, reference extraction, graph building, detectors, grouping, API endpoints, Q&A, and edge cases (corrupt files, array formulas, cycles, unusual sheet names, etc.).
+The standard suite uses a mocked language model, so it does not require Ollama to be running.
 
-Frontend:
+To run the optional live Ollama test:
+
+```bash
+python -m pytest -m ollama
+```
+
+This test is skipped unless the required local model service is available.
+
+To build the frontend and run its TypeScript checks:
 
 ```bash
 cd frontend
-npm run build   # runs tsc --noEmit + Vite build
+npm run build
 ```
 
-There is no ESLint config, so linting is N/A. End-to-end Playwright checks live under `frontend/` (`setup.spec.ts`, `upload.spec.ts`, `flow.spec.ts`, `audit.spec.ts`).
+Playwright end-to-end tests are also included in the frontend project.
 
 ## Performance
 
-No formal benchmarks have been published. Measured during QA on the sample fixture (cold cache, CPU, Gemma via Ollama): roughly 16 model calls for about four minutes of model wall time, dominated by single-token-per-second CPU inference. Results are cached in SQLite, so reruns are instant. Template descriptions handle trivial groups without a model call, and batching reduces round trips. These observations are specific to one machine and workload — treat them as informal, not guarantees.
+SheetSense does not have formal published benchmarks yet.
 
-## Security
+During QA, a cold-cache run on the sample workbook took roughly four minutes for about 16 model calls, with CPU-based inference being the main bottleneck. Results are cached in SQLite, making subsequent runs much faster when cached results can be reused.
 
-- **Local-first:** The workbook is parsed and stored on your machine (`~/.sheetsense` or `DATA_DIR`). Nothing is uploaded, and there is no telemetry or analytics.
-- **Network:** The only traffic is between local processes — browser → backend (`http://127.0.0.1:8000`) and backend → Ollama (`http://localhost:11434`). No CDN assets; fonts are system fonts and all JS/CSS is bundled.
-- **Macros:** `.xlsm` files are rejected. Formulas are read statically, never executed.
-- **Backend binding:** FastAPI binds to `127.0.0.1` only, not a public interface.
-- **No secrets:** There are no API keys or production secrets in the project.
+Template-based explanations and batching also reduce unnecessary model calls.
 
-To report a security vulnerability, contact the repository owner privately (do not open a public issue).
+These measurements come from one machine and one workload. Actual performance will depend on workbook size, available hardware, and the model being used.
 
-## Status
+## Current limitations
 
-SheetSense is an early release (v0.1.0). The deterministic core — parsing, graphing, detection, local explanations, Q&A — is implemented. Known limitations: VBA/macros unsupported, cached values may be missing, very large workbooks are slower, model explanations can be imperfect and are always presented alongside the underlying evidence, and results are cells to review, not an audit. The group-level map toggle and desktop packaging are not yet built.
+SheetSense is an early release, currently at `v0.1.0`.
+
+Some limitations are worth knowing before using it:
+
+- Suspicious-cell findings require human review and are not proof of errors.
+- Model-generated explanations can be imperfect.
+- Cached formula values may be unavailable in some workbooks.
+- Very large workbooks can take longer to analyze.
+- VBA and macro-enabled `.xlsm` files are unsupported.
+- Local model inference requires sufficient hardware and disk space.
+- The current dependency map is sheet-level. A group-level map toggle is planned but not implemented.
+- Desktop packaging and a dedicated workbook handover service are ideas for future development, not existing features.
+
+## Ideas for turning SheetSense into a side hustle
+
+I built SheetSense as a technical project, but I also wanted to explore whether it could solve a problem people would pay to have addressed.
+
+A few possible directions are:
+
+**Workbook handover reports**
+
+Prepare a structured report explaining a workbook's layout, dependencies, and suspicious formulas for accountants, consultants, and small businesses.
+
+**A packaged desktop application**
+
+Offer an easier installation experience for professionals who regularly inherit and review spreadsheets.
+
+**Affordable tools for freelancers**
+
+Provide a focused alternative for people who need help understanding financial or operational workbooks but do not need a full enterprise financial-modelling platform.
+
+The potential value is straightforward. If someone spends hours tracing a workbook or misses a formula issue that affects a business decision, reducing that work could be useful.
+
+These are ideas, not validated business models. I have not established willingness to pay or tested pricing with paying customers. The next step would be to get the tool in front of accountants and small businesses, learn which parts they find useful, and see whether they would pay for them.
+
+## Why open-source AI makes sense here
+
+For SheetSense, the language model is only one part of the application.
+
+The parser, dependency graph, formula grouping, and detection rules do most of the analytical work. The model helps turn the results into explanations that are easier to understand.
+
+That separation makes the project easier to inspect, test, and improve. Developers can work on the analysis without needing a running model for every test, and the model can be changed without rebuilding the workbook-processing pipeline.
+
+It also makes the limitations clearer. A flagged formula still needs to be reviewed, and a generated explanation should be checked against the cited cells.
+
+For a tool that deals with financial and operational spreadsheets, keeping the evidence accessible is more useful than pretending the model will always be right.
 
 ## Contributing
 
-Bug reports, feature proposals, and pull requests are welcome. Run the backend test suite (`python -m pytest`) and the frontend build (`npm run build`) before submitting. There is no separate `CONTRIBUTING.md` yet — open an issue to discuss larger changes first.
+Contributions, bug reports, and feature suggestions are welcome.
+
+A few useful places to start:
+
+- Improve or add rules in `backend/app/core/detectors.py`.
+- Extend formula parsing and dependency tracing in `backend/app/core/parser/` and `backend/app/core/graph/`.
+- Improve explanation prompts and response handling in `backend/app/core/llm/`.
+- Work on the interface in `frontend/src/pages/` and `frontend/src/components/`.
+- Add tests for edge cases or workbooks that expose incorrect results.
+
+Before submitting a pull request, run the backend tests and build the frontend:
+
+```bash
+cd backend
+python -m pytest
+```
+
+```bash
+cd frontend
+npm run build
+```
+
+For larger changes, opening an issue first is a good way to discuss the approach.
+
+To report a security vulnerability, contact the repository owner privately rather than opening a public issue.
+
+
 
 ## License
 
-MIT License. See the [`LICENSE`](LICENSE) file.
+SheetSense is released under the MIT License. See [`LICENSE`](LICENSE) for details.
 
