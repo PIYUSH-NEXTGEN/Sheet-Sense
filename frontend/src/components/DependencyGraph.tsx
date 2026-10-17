@@ -1,17 +1,16 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Background,
   BackgroundVariant,
-  MiniMap,
   ReactFlow,
   type Edge,
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { api } from "../api/client";
-import type { GraphData, GraphLevel } from "../api/types";
+import type { GraphData } from "../api/types";
 import { EmptyState, ErrorState, LoadingState } from "./States";
 import { apiErrorMessage } from "../hooks/useWorkbook";
 
@@ -51,7 +50,9 @@ function layout(data: GraphData): { nodes: FlowNode[]; edges: Edge[] } {
     const label =
       kind === "group"
         ? `${String(raw["sheet"])} (${(raw["cells"] as string[]).length})`
-        : id;
+        : kind === "more"
+          ? `+${String(raw["count"] ?? "?")} cells`
+          : id;
     const detail =
       kind === "group"
         ? String(raw["sample_formula"] ?? "")
@@ -76,13 +77,12 @@ function layout(data: GraphData): { nodes: FlowNode[]; edges: Edge[] } {
   return { nodes, edges };
 }
 
-/** Sheet/group dependency map with a level toggle (Phase 6). */
+/** Sheet-level dependency map (static; interactions are locked). */
 export function DependencyGraph({ workbookId }: { workbookId: string }) {
-  const [level, setLevel] = useState<GraphLevel>("sheet");
   const navigate = useNavigate();
   const graph = useQuery({
-    queryKey: ["graph", workbookId, level],
-    queryFn: () => api.getGraph(workbookId, level),
+    queryKey: ["graph", workbookId, "sheet"],
+    queryFn: () => api.getGraph(workbookId, "sheet"),
     retry: 1,
   });
   const laid = useMemo(
@@ -92,24 +92,6 @@ export function DependencyGraph({ workbookId }: { workbookId: string }) {
 
   return (
     <div className="space-y-2">
-      <div className="inline-flex rounded-md border border-night-600 bg-night-950 p-0.5" role="group" aria-label="Graph level">
-        {(["sheet", "group"] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            aria-pressed={level === option}
-            onClick={() => setLevel(option)}
-            className={`rounded px-3 py-1.5 font-mono text-sm font-medium transition-colors ${
-              level === option
-                ? "bg-accent font-bold text-accent-ink"
-                : "text-night-400 hover:text-night-100"
-            }`}
-          >
-            {option === "sheet" ? "Sheets" : "Groups"}
-          </button>
-        ))}
-      </div>
-
       {graph.isPending && <LoadingState what="dependency map" />}
       {graph.isError && (
         <ErrorState
@@ -145,7 +127,6 @@ export function DependencyGraph({ workbookId }: { workbookId: string }) {
             }}
           >
             <Background variant={BackgroundVariant.Dots} gap={24} />
-            <MiniMap pannable={false} zoomable={false} />
           </ReactFlow>
         </div>
       )}

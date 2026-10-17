@@ -1,7 +1,7 @@
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { api } from "./api/client";
-import { AskPage } from "./pages/AskPage";
+import { AskWidget } from "./components/AskWidget";
 import { IssuesPage } from "./pages/IssuesPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { SetupPage } from "./pages/SetupPage";
@@ -108,7 +108,6 @@ function Layout() {
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/w/:id" element={<OverviewPage />} />
           <Route path="/w/:id/issues" element={<IssuesPage />} />
-          <Route path="/w/:id/ask" element={<AskPage />} />
           <Route path="/w/:id/sheets/:name" element={<SheetPage />} />
           <Route
             path="*"
@@ -116,6 +115,7 @@ function Layout() {
           />
         </Routes>
       </main>
+      <AskWidget />
       <footer className="border-t border-night-600 bg-night-950">
         <p className="mx-auto max-w-6xl px-4 py-4 font-mono text-sm text-night-400">
           SheetSense runs fully on your machine. Findings are suspicious cells

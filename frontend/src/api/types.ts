@@ -48,6 +48,7 @@ export interface Explanation {
   structured: Record<string, unknown>;
   model: string;
   prompt_version: string;
+  source: "template" | "model";
 }
 
 // --- REST shapes ---

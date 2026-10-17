@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
+import { openAskDrawer } from "../components/AskWidget";
 import { DependencyGraph } from "../components/DependencyGraph";
 import { EmptyState, ErrorState, LoadingState } from "../components/States";
 import { Card, PageHeader, SecondaryButton, SectionTitle, Stat } from "../components/ui";
@@ -54,12 +55,12 @@ export function OverviewPage() {
             >
               Suspicious cells to review
             </Link>
-            <Link
-              to={`/w/${data.workbook_id}/ask`}
-              className="inline-flex w-full items-center justify-center rounded-md border border-night-600 bg-transparent px-3.5 py-2 font-mono text-sm font-medium text-night-100 hover:border-night-400 hover:bg-night-700 sm:w-auto"
+            <SecondaryButton
+              onClick={() => openAskDrawer()}
+              className="w-full sm:w-auto"
             >
               Ask a question
-            </Link>
+            </SecondaryButton>
             <SecondaryButton
               onClick={() => void downloadExport()}
               className="w-full sm:w-auto"

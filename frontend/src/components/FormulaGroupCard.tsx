@@ -33,6 +33,14 @@ export function FormulaGroupCard({
           <span className="tnum rounded-md border border-night-600 bg-night-950 px-2 py-0.5 font-mono text-sm text-night-300">
             {group.cells.length} {group.cells.length === 1 ? "cell" : "cells"}
           </span>
+          {group.explanation?.source === "template" && (
+            <span
+              title="Described automatically from the formula pattern; no model call"
+              className="rounded-md border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-sm text-accent"
+            >
+              auto-described
+            </span>
+          )}
         </div>
         <p className="mt-2 text-sm leading-relaxed text-night-300">
           {group.explanation ? group.explanation.text : "Explanation unavailable."}
