@@ -2,31 +2,31 @@
   {
     "detector": "hardcoded_constant",
     "sheet": "Summary",
-    "address": "B5"
+    "address": "B6"
   },
   {
     "detector": "pattern_break",
     "sheet": "Pricing",
-    "address": "C13"
+    "address": "D10"
   },
   {
     "detector": "range_gap",
     "sheet": "Summary",
-    "address": "B3"
-  },
-  {
-    "detector": "orphan_input",
-    "sheet": "Settings",
-    "address": "B3"
-  },
-  {
-    "detector": "orphan_input",
-    "sheet": "Settings",
     "address": "B4"
+  },
+  {
+    "detector": "orphan_input",
+    "sheet": "Settings",
+    "address": "B5"
   },
   {
     "detector": "circular",
     "sheet": "Summary",
-    "address": "B7"
+    "address": "B9"
+  },
+  {
+    "detector": "circular",
+    "sheet": "Summary",
+    "address": "B10"
   }
 ]
