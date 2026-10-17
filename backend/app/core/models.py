@@ -53,6 +53,7 @@ class Explanation(BaseModel):
     structured: dict[str, Any] = Field(default_factory=dict)
     model: str
     prompt_version: str
+    source: Literal["template", "model"] = "model"  # old payloads lack it
 
 
 class ParsedWorkbook(BaseModel):

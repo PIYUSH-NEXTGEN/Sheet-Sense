@@ -63,9 +63,25 @@ class FakeLLMClient:
         self.calls: list[tuple[str, str]] = []
 
     def chat_structured(self, user_message: str, schema):
+        import re
+
         from app.core.llm.client import LLMError
 
         self.calls.append((user_message, schema.__name__))
         if self.fail:
             raise LLMError("fake failure")
+        if schema.__name__ == "BatchGroupExplanations":
+            ids = re.findall(r'"group_id": "([0-9a-f]{16})"', user_message)
+            return schema(
+                **{
+                    "items": [
+                        {
+                            "group_id": gid,
+                            "summary": f"Fake summary {gid}.",
+                            "plain_formula": "Fake.",
+                        }
+                        for gid in ids
+                    ]
+                }
+            ).model_dump()
         return schema(**self.CANNED).model_dump()

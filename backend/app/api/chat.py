@@ -59,4 +59,5 @@ def ask(workbook_id: str, body: AskRequest) -> dict[str, Any]:
         depth,
         sheet_texts=sheet_texts,
         stats=result.get("stats", {}),
+        pending_group_ids=set(result.get("pending_groups", [])),
     )

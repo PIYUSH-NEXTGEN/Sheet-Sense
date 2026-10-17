@@ -6,6 +6,8 @@ Storage is isolated per test via the live ``DATA_DIR`` env override (see
 """
 
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -56,7 +58,7 @@ def _upload(client, name="harbor-supply-pricing.xlsx", content=DIRTY_BYTES):
 def _analyze_and_wait(client, workbook_id):
     resp = client.post(f"/api/workbooks/{workbook_id}/analyze")
     assert resp.status_code == 200, resp.text
-    # SSE blocks server-side until the background thread finishes.
+    # SSE blocks server-side until phase A finishes (persist event).
     progress = client.get(f"/api/workbooks/{workbook_id}/progress")
     assert progress.status_code == 200
     assert progress.headers["content-type"].startswith("text/event-stream")
@@ -67,6 +69,19 @@ def _analyze_and_wait(client, workbook_id):
     ]
     assert events, "no progress events streamed"
     assert events[-1]["percent"] == 100
+    # Phase B keeps explaining in the background; wait for it too.
+    deadline = time.time() + 180
+    while True:
+        ov = client.get(f"/api/workbooks/{workbook_id}/overview").json()
+        prog = ov.get("explanation_progress", {})
+        if (
+            ov.get("status") == "ready"
+            and prog.get("total", 0) > 0
+            and prog.get("explained", 0) >= prog.get("total", 0)
+        ):
+            break
+        assert time.time() < deadline, "phase B did not finish"
+        time.sleep(1)
     return events
 
 
@@ -80,12 +95,18 @@ def _progress_events(text: str) -> list:
 
 def test_progress_resumes_from_after(client):
     wid = _upload(client)
+    _analyze_and_wait(client, wid)
     full = _progress_events(client.get(f"/api/workbooks/{wid}/progress").text)
     assert full, "expected seeded events"
+    # The stream contract ends at the first persist event; resume slices
+    # relative to that, never leaking phase-B events into the upload flow.
+    first_persist = next(
+        i for i, e in enumerate(full) if e["stage"] in ("persist", "failed")
+    )
     resumed = _progress_events(
         client.get(f"/api/workbooks/{wid}/progress?after=1").text
     )
-    assert resumed == full[1:]
+    assert resumed == full[1 : first_persist + 1]
     assert (
         _progress_events(
             client.get(f"/api/workbooks/{wid}/progress?after=1000").text
@@ -333,3 +354,50 @@ def test_reupload_same_filename_replaces(client):
     listed = client.get("/api/workbooks").json()["workbooks"]
     assert [w["workbook_id"] for w in listed] == [second]
     assert client.get(f"/api/workbooks/{first}/overview").status_code == 404
+
+
+def _huge_graph():
+    import networkx as nx
+
+    graph = nx.DiGraph()
+    for i in range(600):
+        key = f"S!A{i + 1}"
+        graph.add_node(
+            key, sheet="S", address=f"A{i + 1}", kind="input", formula=None
+        )
+    for i in range(1, 600):
+        graph.add_edge(f"S!A{i}", f"S!A{i + 1}")
+    return graph
+
+
+def test_group_map_drops_islands_and_caps_inputs():
+    import networkx as nx
+    from app.api.analysis import MAX_MAP_INPUTS, _group_graph_view
+
+    islands = nx.DiGraph()
+    for i in range(500):
+        islands.add_node(f"S!A{i}", sheet="S", address=f"A{i}", kind="input")
+    view = _group_graph_view(islands, [])
+    assert view["nodes"] == []  # connected to nothing: nothing to map
+    assert view["edges"] == []
+
+    view = _group_graph_view(_huge_graph(), [])
+    kinds = [n["type"] for n in view["nodes"]]
+    assert len(view["nodes"]) <= MAX_MAP_INPUTS + 1  # +1 per-sheet stub
+    assert kinds.count("more") == 1
+    stub = next(n for n in view["nodes"] if n["type"] == "more")
+    assert stub["count"] == 600 - MAX_MAP_INPUTS
+    rendered = {n["id"] for n in view["nodes"]}
+    assert all(
+        e["source"] in rendered and e["target"] in rendered
+        for e in view["edges"]
+    )
+
+
+def test_group_map_keeps_fixture_cells(client):
+    wid = _upload(client)
+    _analyze_and_wait(client, wid)
+    body = client.get(f"/api/workbooks/{wid}/graph?level=group").json()
+    ids = {n["id"] for n in body["nodes"]}
+    assert "Pricing!C13" in ids  # the planted constant stays visible
+    assert len(body["nodes"]) < 300

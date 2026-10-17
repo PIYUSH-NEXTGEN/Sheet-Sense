@@ -43,6 +43,7 @@ class WorkbookRow(Base):
 STATUS_UPLOADED = "uploaded"
 STATUS_ANALYZING = "analyzing"
 STATUS_READY = "ready"
+STATUS_EXPLAINING = "explaining"
 STATUS_FAILED = "failed"
 
 

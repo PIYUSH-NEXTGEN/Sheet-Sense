@@ -19,6 +19,16 @@ class GroupExplanation(BaseModel):
     plain_formula: str = Field(min_length=1)
 
 
+class BatchGroupItem(BaseModel):
+    group_id: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    plain_formula: str = Field(min_length=1)
+
+
+class BatchGroupExplanations(BaseModel):
+    items: list[BatchGroupItem] = Field(min_length=1)
+
+
 class SheetSummary(BaseModel):
     purpose: str = Field(min_length=1)
     key_inputs: list[str] = Field(default_factory=list)

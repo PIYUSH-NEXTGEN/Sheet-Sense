@@ -60,6 +60,47 @@ def _ok(payload: dict) -> FakeResp:
     return FakeResp(200, {"message": {"content": json.dumps(payload)}})
 
 
+def test_timing_log_records_call_stats(tmp_path, monkeypatch):
+    log = tmp_path / "timings.jsonl"
+    monkeypatch.setenv("SHEETSENSE_TIMING_LOG", str(log))
+    http = FakeHTTP(
+        [
+            FakeResp(
+                200,
+                {
+                    "message": {"content": json.dumps({"summary": "S.", "plain_formula": "P."})},
+                    "prompt_eval_count": 40,
+                    "eval_count": 25,
+                    "load_duration": 1000,
+                    "eval_duration": 2000,
+                    "total_duration": 3000,
+                },
+            )
+        ]
+    )
+    client = OllamaClient(model="m", http=http)
+    client.chat_structured("explain this", GroupExplanation)
+    lines = log.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["kind"] == "GroupExplanation"
+    assert entry["prompt_chars"] == len("explain this")
+    assert entry["wall_s"] >= 0
+    assert entry["prompt_eval_count"] == 40
+    assert entry["eval_count"] == 25
+    assert entry["load_duration"] == 1000
+    assert entry["eval_duration"] == 2000
+    assert entry["total_duration"] == 3000
+
+
+def test_no_timing_log_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("SHEETSENSE_TIMING_LOG", raising=False)
+    http = FakeHTTP([_ok({"summary": "S.", "plain_formula": "P."})])
+    client = OllamaClient(model="m", http=http)
+    client.chat_structured("explain this", GroupExplanation)
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_chat_structured_validates_schema():
     http = FakeHTTP([_ok({"summary": "S.", "plain_formula": "P."})])
     client = OllamaClient(model="m", http=http)
@@ -128,12 +169,19 @@ def test_missing_model_name_raises_without_http(monkeypatch):
     assert http.requests == []
 
 
+def _model_groups(wb):
+    """Groups that need the model (templates must not cover them)."""
+    from app.core.grouping.patterns import group_formulas
+    from app.core.llm.templates import render_group
+
+    return [g for g in group_formulas(wb) if render_group(g, wb) is None]
+
+
 def test_explainer_placeholder_on_failure(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     wb = read_workbook(DIRTY_XLSX)
-    from app.core.grouping.patterns import group_formulas
 
-    groups = group_formulas(wb)[:2]
+    groups = _model_groups(wb)[:2]
     out = explain_groups(groups, wb, FakeLLMClient(fail=True))
     assert len(out) == 2
     for expl in out.values():
@@ -144,12 +192,11 @@ def test_explainer_placeholder_on_failure(tmp_path, monkeypatch):
 def test_cache_hit_on_second_run(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     wb = read_workbook(DIRTY_XLSX)
-    from app.core.grouping.patterns import group_formulas
 
-    groups = group_formulas(wb)[:2]
+    groups = _model_groups(wb)[:2]
     fake = FakeLLMClient()
     first = explain_groups(groups, wb, fake)
-    assert len(fake.calls) == 2
+    assert len(fake.calls) == 1  # one batched call for the same-sheet chunk
     fake.calls.clear()
     second = explain_groups(groups, wb, fake)
     assert fake.calls == []  # served from SQLite, zero model calls
@@ -170,10 +217,16 @@ def test_pipeline_continues_with_placeholders(tmp_path, monkeypatch):
     )
     assert len(result["issues"]) == 6  # deterministic facts unaffected
     assert result["explanations"]["workbook"]["text"] == PLACEHOLDER_TEXT
-    assert all(
-        g["text"] == PLACEHOLDER_TEXT
-        for g in result["explanations"]["groups"].values()
-    )
+    from app.core.grouping.patterns import group_formulas as _groups
+    from app.core.llm.templates import render_group as _render
+
+    wb = read_workbook(DIRTY_XLSX)
+    by_id = {g.id: g for g in _groups(wb)}
+    for gid, g in result["explanations"]["groups"].items():
+        if _render(by_id[gid], wb) is None:
+            assert g["text"] == PLACEHOLDER_TEXT
+        else:
+            assert g["source"] == "template"  # templates need no model
 
 
 def test_pipeline_uses_fake_model_text(tmp_path, monkeypatch):

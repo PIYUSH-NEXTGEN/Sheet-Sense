@@ -38,6 +38,22 @@ Reply with JSON only: {{"summary": "<1-2 plain sentences>", "plain_formula": "<t
 {_STANDING_INSTRUCTION}"""
 
 
+def batch_group_prompt(sheet: str, groups: list[dict[str, Any]]) -> str:
+    """User message explaining several groups from one sheet in one call.
+
+    Each entry carries its ``group_id`` plus the same fact bundle as
+    :func:`group_prompt`. The reply must contain exactly the requested ids.
+    """
+    return f"""Explain what each of these spreadsheet formula groups computes, in 1-2 plain sentences each with no jargon and no speculation beyond the given facts. All groups are on sheet {sheet}.
+
+Groups:
+{_facts_block({"groups": groups})}
+
+Reply with JSON only: {{"items": [{{"group_id": "<one of the requested ids>", "summary": "<1-2 plain sentences>", "plain_formula": "<the formula in words>"}}]}}. Include every requested group_id exactly once.
+
+{_STANDING_INSTRUCTION}"""
+
+
 def sheet_prompt(facts: dict[str, Any]) -> str:
     """User message summarizing one sheet.
 

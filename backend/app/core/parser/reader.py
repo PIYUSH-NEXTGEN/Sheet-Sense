@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import load_workbook
+from openpyxl.worksheet.formula import ArrayFormula
 
 from ...config import MAX_CELLS, MAX_FILE_MB
 from ..models import CellRecord, CellRef, ParsedWorkbook
@@ -87,7 +88,13 @@ def read_workbook(path: str | os.PathLike[str]) -> ParsedWorkbook:
             f"Workbook is {size_mb:.1f} MB, above the {MAX_FILE_MB} MB limit."
         )
 
-    wb_formulas = load_workbook(path, data_only=False)
+    try:
+        wb_formulas = load_workbook(path, data_only=False)
+    except Exception as exc:
+        raise ValueError(
+            f"Cannot parse workbook {path.name!r}: not a readable .xlsx file "
+            f"({exc})."
+        ) from exc
     try:
         wb_values = load_workbook(path, data_only=True)
     except Exception:
@@ -120,6 +127,11 @@ def read_workbook(path: str | os.PathLike[str]) -> ParsedWorkbook:
         for row in ws.iter_rows():
             for cell in row:
                 raw = cell.value
+                if isinstance(raw, ArrayFormula):
+                    # Array formulas read back as objects; their text is the
+                    # formula (with "=" prefix per openpyxl's writer).
+                    text = raw.text or ""
+                    raw = text if text.startswith("=") else f"={text}"
                 formula = raw if isinstance(raw, str) and raw.startswith("=") else None
                 cached: Any = None
                 if ws_values is not None:

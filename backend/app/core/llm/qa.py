@@ -136,6 +136,22 @@ def _cell_label(wb: ParsedWorkbook, key: str) -> str:
     )
 
 
+_CELL_TOKEN_RE = re.compile(r"\b([A-Za-z]{1,3})(\d{1,7})\b")
+
+
+def _mentions_missing_cells(question: str, wb: ParsedWorkbook) -> bool:
+    """True when the question names a cell address present nowhere.
+
+    Guards the general-answer fallback: without this, the model happily
+    locates nonexistent cells ("Cell ZZZ999 comes from ...").
+    """
+    tokens = {m.group(0).upper() for m in _CELL_TOKEN_RE.finditer(question)}
+    if not tokens:
+        return False
+    existing = {rec.ref.address.upper() for rec in wb.cells.values()}
+    return bool(tokens - existing)
+
+
 def _chain_facts(
     collapsed: dict[str, Any],
     wb: ParsedWorkbook,
@@ -216,6 +232,7 @@ def answer_question(
     depth: int = TRACE_DEPTH,
     sheet_texts: dict[str, str] | None = None,
     stats: dict[str, Any] | None = None,
+    pending_group_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Answer ``question`` from the traced chain (see module docstring).
 
@@ -224,6 +241,16 @@ def answer_question(
     otherwise returns the couldn't-trace message.
     """
     candidates = candidate_targets(question, wb)
+    if _mentions_missing_cells(question, wb):
+        return {
+            "question": question,
+            "target": None,
+            "answer": CANT_TRACE,
+            "cited_cells": [],
+            "chain": [],
+            "traced": False,
+            "relevant": False,
+        }
     if not candidates:
         if client is not None and sheet_texts is not None and stats is not None:
             return _general_answer(question, sheet_texts, stats, client)
@@ -310,6 +337,14 @@ def answer_question(
             "traced": False,
             "relevant": False,
         }
+    pending = {
+        gid for gid in collapsed["group_ids"] if gid in (pending_group_ids or set())
+    }
+    if pending:
+        answer_text += (
+            f" Note: explanations for {len(pending)} group(s) in this "
+            f"trace are still being generated."
+        )
     return {
         "question": question,
         "target": target,

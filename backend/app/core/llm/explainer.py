@@ -15,10 +15,23 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from ..models import Explanation, FormulaGroup, ParsedWorkbook
+from ... import config as app_config
 from .cache import cache_get, cache_put, cache_key, group_payload
 from .client import LLMClient
-from .prompts import PROMPT_VERSION, group_prompt, sheet_prompt, workbook_prompt
-from .schemas import GroupExplanation, SheetSummary, WorkbookOverview
+from .templates import render_group
+from .prompts import (
+    PROMPT_VERSION,
+    batch_group_prompt,
+    group_prompt,
+    sheet_prompt,
+    workbook_prompt,
+)
+from .schemas import (
+    BatchGroupExplanations,
+    GroupExplanation,
+    SheetSummary,
+    WorkbookOverview,
+)
 
 PLACEHOLDER_TEXT = "Explanation unavailable"
 
@@ -97,29 +110,152 @@ def _pool_size(client: LLMClient | None) -> int:
     return max(1, int(workers))
 
 
+def _batch_size() -> int:
+    try:
+        return max(1, int(app_config.LLM_BATCH_SIZE))
+    except (TypeError, ValueError):
+        return 6
+
+
+def _group_cache_key(group: FormulaGroup, model: str) -> str:
+    return cache_key("group", group_payload(group.pattern_r1c1, group.labels), model, PROMPT_VERSION)
+
+
+def _cached_group_explanation(
+    group: FormulaGroup, model: str
+) -> Explanation | None:
+    cached = cache_get(_group_cache_key(group, model))
+    if cached is None:
+        return None
+    return Explanation(
+        target_type="group",
+        target_id=group.id,
+        text=str(cached.get("summary", "")),
+        structured=dict(cached),
+        model=model,
+        prompt_version=PROMPT_VERSION,
+    )
+
+
+def _store_group_explanation(
+    group: FormulaGroup, model: str, validated: dict[str, Any]
+) -> Explanation:
+    cache_put(_group_cache_key(group, model), validated)
+    return Explanation(
+        target_type="group",
+        target_id=group.id,
+        text=str(validated.get("summary", "")),
+        structured=dict(validated),
+        model=model,
+        prompt_version=PROMPT_VERSION,
+    )
+
+
+def _explain_chunk(
+    sheet: str,
+    chunk: list[FormulaGroup],
+    wb: ParsedWorkbook,
+    client: LLMClient | None,
+    model: str,
+) -> dict[str, Explanation]:
+    """Explain one same-sheet chunk: cache first, one batch call for misses."""
+    results: dict[str, Explanation] = {}
+    uncached: list[FormulaGroup] = []
+    for group in chunk:
+        hit = _cached_group_explanation(group, model)
+        if hit is not None:
+            results[group.id] = hit
+        else:
+            uncached.append(group)
+    if not uncached:
+        return results
+    if client is None:
+        for group in uncached:
+            results[group.id] = placeholder("group", group.id, model)
+        return results
+    facts = [
+        {"group_id": group.id, **group_facts(group, wb)} for group in uncached
+    ]
+    try:
+        response = client.chat_structured(
+            batch_group_prompt(sheet, facts), BatchGroupExplanations
+        )
+    except Exception:
+        response = None
+    # Strict validation: unknown ids dropped, duplicates keep the first,
+    # missing requested ids fall back to single-group calls.
+    seen: dict[str, dict[str, Any]] = {}
+    for item in (response or {}).get("items", []):
+        gid = item.get("group_id")
+        if gid in [g.id for g in uncached] and gid not in seen:
+            seen[gid] = item
+    for group in uncached:
+        if group.id in seen:
+            results[group.id] = _store_group_explanation(
+                group, model, seen[group.id]
+            )
+        else:
+            results[group.id] = _explain_one(
+                kind="group",
+                payload=group_payload(group.pattern_r1c1, group.labels),
+                prompt=group_prompt(group_facts(group, wb)),
+                text_key="summary",
+                target_type="group",
+                target_id=group.id,
+                client=client,
+                model=model,
+                schema=GroupExplanation,
+            )
+    return results
+
+
 def explain_groups(
     groups: list[FormulaGroup], wb: ParsedWorkbook, client: LLMClient | None
 ) -> dict[str, Explanation]:
-    """Explain every group concurrently (worker pool); returns {id: expl}."""
+    """Explain groups: templates first, then one batched call per chunk."""
     model = client.model if client else ""
-    jobs = [(group, group_facts(group, wb)) for group in groups]
+    out: dict[str, Explanation] = {}
 
-    def _run(job: tuple[FormulaGroup, dict[str, Any]]) -> tuple[str, Explanation]:
-        group, facts = job
-        return group.id, _explain_one(
-            kind="group",
-            payload=group_payload(group.pattern_r1c1, group.labels),
-            prompt=group_prompt(facts),
-            text_key="summary",
+    def _template(group: FormulaGroup) -> Explanation | None:
+        rendered = render_group(group, wb)
+        if rendered is None:
+            return None
+        return Explanation(
             target_type="group",
             target_id=group.id,
-            client=client,
-            model=model,
-            schema=GroupExplanation,
+            text=rendered["summary"],
+            structured={
+                "summary": rendered["summary"],
+                "plain_formula": rendered["plain_formula"],
+            },
+            model="template",
+            prompt_version=PROMPT_VERSION,
+            source="template",
         )
 
+    for group in groups:
+        templated = _template(group)
+        if templated is not None:
+            out[group.id] = templated
+    by_sheet: dict[str, list[FormulaGroup]] = {}
+    for group in groups:
+        if group.id not in out:
+            by_sheet.setdefault(group.sheet, []).append(group)
+    size = _batch_size()
+    chunks = [
+        (sheet, members[i : i + size])
+        for sheet, members in by_sheet.items()
+        for i in range(0, len(members), size)
+    ]
+
+    def _run(job: tuple[str, list[FormulaGroup]]) -> dict[str, Explanation]:
+        sheet, chunk = job
+        return _explain_chunk(sheet, chunk, wb, client, model)
+
     with ThreadPoolExecutor(max_workers=_pool_size(client)) as pool:
-        return dict(pool.map(_run, jobs))
+        for partial in pool.map(_run, chunks):
+            out.update(partial)
+    return out
 
 
 def explain_sheets(

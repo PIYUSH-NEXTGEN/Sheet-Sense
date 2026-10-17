@@ -151,6 +151,30 @@ def test_no_candidates_cant_trace(dirty_setup):
     assert out["answer"] == CANT_TRACE
 
 
+def test_missing_cell_reference_cant_trace(dirty_setup):
+    wb, graph, groups = dirty_setup
+    out = answer_question(
+        "Where does cell ZZZ999 come from?",
+        wb, graph, groups, {},
+        ScriptedFake(),
+        sheet_texts={"S": "x"}, stats={},
+    )
+    assert out["target"] is None
+    assert out["cited_cells"] == []
+    assert out["answer"] == CANT_TRACE
+
+
+def test_existing_cell_reference_proceeds(dirty_setup):
+    wb, graph, groups = dirty_setup
+    out = answer_question(
+        "Where is the total with surcharge B5?",
+        wb, graph, groups, {},
+        ScriptedFake(cited=("Summary!B5",)),
+        sheet_texts={"S": "x"}, stats={},
+    )
+    assert out["target"] == "Summary!B5"
+
+
 def _context():
     return (
         {"Inputs": "holds items", "Pricing": "computes prices"},

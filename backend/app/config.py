@@ -59,8 +59,15 @@ MAX_CELLS: int = int(os.environ.get("MAX_CELLS", "500000"))
 # Local persistence directory (SQLite file + uploaded workbooks live here).
 DATA_DIR: Path = Path(os.environ.get("DATA_DIR", str(Path.home() / ".sheetsense")))
 
-# Concurrent Ollama calls for explanations (spec: pool of 2-4, configurable).
-LLM_WORKERS: int = int(os.environ.get("LLM_WORKERS", "3"))
+# Concurrent Ollama calls. Default 1: a stock Ollama server serializes
+# requests (OLLAMA_NUM_PARALLEL unset), so a bigger pool adds contention
+# without speedup (measured 0.79x at 3 workers). Raise together with the
+# server's OLLAMA_NUM_PARALLEL only.
+LLM_WORKERS: int = int(os.environ.get("LLM_WORKERS", "1"))
 
 # Per-call HTTP timeout (seconds) for Ollama chat requests.
 LLM_TIMEOUT_S: float = float(os.environ.get("LLM_TIMEOUT_S", "180"))
+
+# Groups per sheet explained in a single model call (batching). Kept small
+# for a 4B model; raise for bigger models or lower for longer chains.
+LLM_BATCH_SIZE: int = int(os.environ.get("LLM_BATCH_SIZE", "6"))

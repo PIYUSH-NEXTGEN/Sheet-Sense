@@ -14,6 +14,8 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 from typing import Any, Protocol
 
 import httpx
@@ -53,6 +55,38 @@ def _strip_fences(text: str) -> str:
     return text
 
 
+def _record_timing(
+    kind: str,
+    prompt_chars: int,
+    out_chars: int,
+    wall_s: float,
+    server: dict[str, Any],
+) -> None:
+    """Append one JSON timing line if SHEETSENSE_TIMING_LOG is set.
+
+    Log-only instrumentation: never raises, never changes call behavior.
+    """
+    path = os.environ.get("SHEETSENSE_TIMING_LOG", "")
+    if not path:
+        return
+    entry = {
+        "kind": kind,
+        "prompt_chars": prompt_chars,
+        "out_chars": out_chars,
+        "wall_s": round(wall_s, 3),
+        "prompt_eval_count": server.get("prompt_eval_count"),
+        "eval_count": server.get("eval_count"),
+        "load_duration": server.get("load_duration"),
+        "eval_duration": server.get("eval_duration"),
+        "total_duration": server.get("total_duration"),
+    }
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+    except OSError:
+        pass
+
+
 class OllamaClient:
     """Synchronous Ollama client with structured output and one retry."""
 
@@ -79,7 +113,7 @@ class OllamaClient:
 
     def _chat_once(
         self, user_message: str, fmt: dict[str, Any] | str
-    ) -> str:
+    ) -> tuple[str, dict[str, Any]]:
         try:
             resp = self._post(
                 {
@@ -106,10 +140,12 @@ class OllamaClient:
             data = resp.json()
         except Exception as exc:
             raise LLMError(f"Ollama returned non-JSON: {exc}") from exc
+        if not isinstance(data, dict):
+            raise LLMError("Ollama returned non-JSON")
         content = (data.get("message") or {}).get("content", "")
         if not isinstance(content, str) or not content.strip():
             raise LLMError("Ollama returned an empty message")
-        return content
+        return content, data
 
     def chat_structured(
         self, user_message: str, schema: type[BaseModel]
@@ -123,20 +159,30 @@ class OllamaClient:
         schema_format = to_ollama_format(schema)
         use_format: dict[str, Any] | str = schema_format
         last_error = "unknown error"
+        started = time.perf_counter()
+        server_data: dict[str, Any] = {}
         for _attempt in (1, 2):  # initial try + one retry
             try:
-                content = self._chat_once(user_message, use_format)
+                content, server_data = self._chat_once(user_message, use_format)
             except _FormatRejected:
                 use_format = "json"
                 try:
-                    content = self._chat_once(user_message, use_format)
+                    content, server_data = self._chat_once(user_message, use_format)
                 except _FormatRejected as exc:  # pragma: no cover
                     raise LLMError(f"Ollama rejects JSON mode: {exc}")
                 except LLMError:
                     raise
             try:
                 parsed = json.loads(_strip_fences(content))
-                return schema(**parsed).model_dump()
+                validated = schema(**parsed).model_dump()
+                _record_timing(
+                    schema.__name__,
+                    len(user_message),
+                    len(content),
+                    time.perf_counter() - started,
+                    server_data,
+                )
+                return validated
             except Exception as exc:
                 last_error = f"invalid model output: {exc}"
                 continue

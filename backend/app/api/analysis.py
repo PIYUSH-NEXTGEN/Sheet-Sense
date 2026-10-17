@@ -20,10 +20,11 @@ from fastapi.responses import StreamingResponse
 
 from ..core.graph.builder import build_graph
 from ..core.parser.reader import read_workbook
-from ..core.pipeline import run_analysis
+from ..core.pipeline import run_phase_a, run_phase_b
 from ..db.session import session_scope, uploads_dir
 from ..db.tables import (
     STATUS_ANALYZING,
+    STATUS_EXPLAINING,
     STATUS_FAILED,
     STATUS_READY,
     WorkbookRow,
@@ -79,7 +80,7 @@ def _run_analysis_thread(workbook_id: str, stored_path: str, filename: str) -> N
     with _progress_lock:
         extra = [_conversion_notes.pop(workbook_id)] if workbook_id in _conversion_notes else []
     try:
-        result = run_analysis(
+        result_a, context = run_phase_a(
             workbook_id,
             stored_path,
             filename,
@@ -101,13 +102,34 @@ def _run_analysis_thread(workbook_id: str, stored_path: str, filename: str) -> N
         if row is not None:
             row.status = STATUS_READY
             row.error = None
-            row.result_json = json.dumps(result)
-    # "persist" was already emitted by the pipeline; mark done.
+            row.result_json = json.dumps(result_a)
+    # "persist" was already emitted by phase A; mark done for the uploader.
     with _progress_lock:
         entry = _progress.setdefault(
             workbook_id, {"events": [], "done": True}
         )
         entry["done"] = True
+    # Phase B: model explanations in the background. Any failure leaves the
+    # phase A results (and status) exactly as they are.
+    with session_scope() as session:
+        row = session.get(WorkbookRow, workbook_id)
+        if row is None:
+            return
+        row.status = STATUS_EXPLAINING
+    try:
+        result_b = run_phase_b(context, emit=lambda stage, pct, detail: emit_progress(
+            workbook_id, stage, pct, detail
+        ))
+    except Exception:
+        result_b = None
+    with session_scope() as session:
+        row = session.get(WorkbookRow, workbook_id)
+        if row is None:
+            return
+        if result_b is not None:
+            row.result_json = json.dumps(result_b)
+        row.status = STATUS_READY
+        row.error = None
 
 
 def _get_row_or_404(session, workbook_id: str) -> WorkbookRow:
@@ -127,7 +149,7 @@ def get_ready_result(workbook_id: str) -> tuple[str, str, dict[str, Any]]:
         row = _get_row_or_404(session, workbook_id)
         status, error, payload = row.status, row.error, row.result_json
         filename, stored_path = row.filename, stored_path_for(row)
-    if status != STATUS_READY or not payload:
+    if status not in (STATUS_READY, STATUS_EXPLAINING) or not payload:
         raise HTTPException(
             status_code=409,
             detail=error
@@ -189,14 +211,21 @@ def progress(workbook_id: str, after: int = Query(default=0, ge=0)):
             _get_row_or_404(session, workbook_id)
 
     def gen():
+        # Ends at the first persist/failed event: phase A completion is the
+        # stream's contract (later phase-B events belong to new listeners
+        # resuming with ?after=). This makes the ending deterministic —
+        # breaking on the `done` flag instead raced with phase-B appends.
         index = max(after, 0)
         deadline = time.time() + 120
         yield ": connected\n\n"
         while True:
             events, done = _snapshot()
             while index < len(events):
-                yield f"id: {index}\ndata: {json.dumps(events[index])}\n\n"
+                event = events[index]
+                yield f"id: {index}\ndata: {json.dumps(event)}\n\n"
                 index += 1
+                if event["stage"] in ("persist", "failed"):
+                    return
             if done or time.time() > deadline:
                 break
             time.sleep(0.5)
@@ -210,28 +239,52 @@ def progress(workbook_id: str, after: int = Query(default=0, ge=0)):
 
 @router.get("/{workbook_id}/overview")
 def get_overview(workbook_id: str):
-    """Workbook explanation + stats + warnings."""
+    """Workbook explanation + stats + warnings (+ explanation progress)."""
     filename, _stored_path, result = get_ready_result(workbook_id)
+    total = int(result.get("explanation_total", 0))
+    pending = result.get("pending_groups", [])
+    with session_scope() as session:
+        status = _get_row_or_404(session, workbook_id).status
     return {
         "workbook_id": workbook_id,
         "filename": filename,
-        "status": STATUS_READY,
+        "status": status,
         "explanation": result["explanations"]["workbook"],
         "stats": result["stats"],
         "warnings": result["warnings"],
         "issues_by_severity": result["stats"]["issues_by_severity"],
+        "explanation_progress": {
+            "explained": max(total - len(pending), 0),
+            "total": total,
+        },
     }
 
 
 @router.get("/{workbook_id}/sheets/{name}")
 def get_sheet(workbook_id: str, name: str):
     """Groups + explanations + issues on one sheet."""
+    from ..core.llm.explainer import PLACEHOLDER_TEXT
+
     _filename, _stored_path, result = get_ready_result(workbook_id)
     if name not in result["stats"]["sheets"]:
         raise HTTPException(status_code=404, detail=f"Sheet {name!r} not found.")
     explanations = result["explanations"]["groups"]
+    pending = set(result.get("pending_groups", []))
+
+    def _status(group: dict[str, Any]) -> str:
+        expl = explanations.get(group["id"]) or {}
+        if expl.get("source") == "template":
+            return "template"
+        if expl.get("text") == PLACEHOLDER_TEXT:
+            return "pending" if group["id"] in pending else "unavailable"
+        return "model"
+
     groups = [
-        {**group, "explanation": explanations.get(group["id"])}
+        {
+            **group,
+            "explanation": explanations.get(group["id"]),
+            "explanation_status": _status(group),
+        }
         for group in result["groups"]
         if group["sheet"] == name
     ]
@@ -303,6 +356,13 @@ def _sheet_graph_view(graph) -> dict[str, Any]:
     }
 
 
+# Upper bound for individual input cells in the group-level map. A big
+# values-only sheet would otherwise emit tens of thousands of nodes and
+# freeze the browser; unconnected cells carry no dependency information, so
+# they are dropped, and overflow is collapsed into per-sheet stubs.
+MAX_MAP_INPUTS = 300
+
+
 def _group_graph_view(graph, groups: list[dict[str, Any]]) -> dict[str, Any]:
     cell_to_group: dict[str, str] = {}
     nodes: list[dict[str, Any]] = []
@@ -318,28 +378,73 @@ def _group_graph_view(graph, groups: list[dict[str, Any]]) -> dict[str, Any]:
         )
         for address in group["cells"]:
             cell_to_group[f"{group['sheet']}!{address}"] = group["id"]
+
+    ranges: list[dict[str, Any]] = []
+    candidates: list[tuple[int, str, dict[str, Any]]] = []
     for node, data in graph.nodes(data=True):
         if node in cell_to_group:
             continue
+        if data.get("kind") == "range":
+            ranges.append(
+                {
+                    "id": node,
+                    "type": "range",
+                    "sheet": data.get("sheet"),
+                    "address": data.get("address"),
+                    "formula": None,
+                }
+            )
+            continue
+        degree = graph.in_degree(node) + graph.out_degree(node)
+        if degree == 0:
+            continue  # island: no dependency information to map
+        candidates.append(
+            (
+                degree,
+                node,
+                {
+                    "id": node,
+                    "type": data.get("kind", "input"),
+                    "sheet": data.get("sheet"),
+                    "address": data.get("address"),
+                    "formula": data.get("formula"),
+                },
+            )
+        )
+    # Highest-degree inputs first so the cap keeps the most connected cells.
+    candidates.sort(key=lambda item: (-item[0], item[1]))
+    dropped_owner: dict[str, str] = {}
+    for degree, node, payload in candidates[:MAX_MAP_INPUTS]:
+        nodes.append(payload)
+    for _degree, node, payload in candidates[MAX_MAP_INPUTS:]:
+        sheet = payload.get("sheet") or "?"
+        stub_id = f"__more__{sheet}"
+        dropped_owner[node] = stub_id
+    for sheet in sorted({sid.split("__more__", 1)[1] for sid in dropped_owner.values()}):
+        stub_id = f"__more__{sheet}"
         nodes.append(
             {
-                "id": node,
-                "type": data.get("kind", "input"),
-                "sheet": data.get("sheet"),
-                "address": data.get("address"),
-                "formula": data.get("formula"),
+                "id": stub_id,
+                "type": "more",
+                "sheet": sheet,
+                "address": None,
+                "count": sum(1 for owner in dropped_owner.values() if owner == stub_id),
             }
         )
+    nodes.extend(ranges)
 
     def _owner(node: str) -> str:
-        return cell_to_group.get(node, node)
+        if node in cell_to_group:
+            return cell_to_group[node]
+        return dropped_owner.get(node, node)
 
+    rendered = {n["id"] for n in nodes}
     edge_set: set[tuple[str, str]] = set()
     for source, target in graph.edges:
         mapped = (_owner(source), _owner(target))
-        if mapped[0] != mapped[1]:
+        if mapped[0] != mapped[1] and mapped[0] in rendered and mapped[1] in rendered:
             edge_set.add(mapped)
-    nodes.sort(key=lambda n: (n.get("sheet", ""), n["id"]))
+    nodes.sort(key=lambda n: (str(n.get("sheet", "")), n["id"]))
     return {
         "level": "group",
         "nodes": nodes,
